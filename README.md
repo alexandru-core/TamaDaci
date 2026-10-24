@@ -235,7 +235,7 @@ witness it), each opening a two-option dialog:
 - **PMD SpriteCollab** (everything — main screen, stat card, minigame **and the
   Pokédex grid + detail view**): behaviour sprites — `tools/pack_pmd.py` packs
   actions (Idle, Walk L/R, Sleep, Eat, Hurt, Attack, Pose, Nod, DeepBreath) into
-  the multi-action **TPK2** format (`/mons/pNNN.bin`). The engine in `TamaPoke.ino`
+  the multi-action **TPK2** format (`/mons/pNNN.bin`). The engine in `TamaDaci.ino`
   makes the creature wander, gesture, curl up to sleep, chew and wince. Anchored by
   the feet (lowest content row), not the canvas. The Pokédex thumbnails
   (`thumbs.bin`, TPTH) are derived from these by `tools/make_thumbs.py`.
@@ -314,7 +314,7 @@ beach, forest, volcano, mountain, snow). Sleeping forces night.
 
 ## Layout
 
-- `TamaPoke.ino` — init, game loop, render of every screen, gestures, serial console, audio
+- `TamaDaci.ino` — init, game loop, render of every screen, gestures, serial console, audio
 - `pet.h` / `pet.cpp` — pet state and logic (stats, evolution, life cycle, streak/bond/medals, NVS)
 - `sdmon.h` / `sdmon.cpp` — TPK1 (animated) and TPK2 (PMD) sprites + thumbnails, and file reception over USB (PUT/LS)
 - `rtcbat.h` / `rtcbat.cpp` — PCF85063 RTC + AXP2101 PMU (battery, brightness, PWR button)
