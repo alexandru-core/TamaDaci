@@ -60,9 +60,13 @@ attribution is allowed); see [`../CREDITS.md`](../CREDITS.md).
 
 ## Deploy (GitHub Pages)
 
-1. Repo settings → Pages → serve from `main`, folder `/web` (or move `web/` to
-   `docs/`). Pages gives HTTPS automatically.
-2. URL ends up at `https://<user>.github.io/<repo>/`.
+1. In the repository, set **Settings → Pages → Build and deployment → Source** to
+   **GitHub Actions**.
+2. The `.github/workflows/pages.yml` workflow publishes the contents of `web/`
+   whenever installer files change on `main`; it can also be run manually from
+   the Actions tab.
+3. The site URL is `https://<user>.github.io/<repo>/`. Pages provides HTTPS
+   automatically.
 
 > **Pages on private repos** needs GitHub Pro/Team. If you make the repo
 > **public** to use Pages for free, decide about the sprites first (see above and
