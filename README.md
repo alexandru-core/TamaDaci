@@ -1,4 +1,6 @@
-# TamaPoke
+# TamaDaci
+
+> **TamaDaci is a personal fork of [TamaPoke](https://github.com/socquique/TamaPoke).** It keeps the original Pokémon-inspired virtual pet and web installer, with plans to add more games over time.
 
 [![Flash in browser](https://img.shields.io/badge/flash-in%20browser-FF6B00?logo=googlechrome&logoColor=white)](https://alexandru-core.github.io/TamaDaci/)
 [![MakerWorld](https://img.shields.io/badge/MakerWorld-3D%20case-00AE42?logo=bambulab&logoColor=white)](https://makerworld.com/es/models/2937822-tamapoke-a-pokemon-pokeball-tamagotchi)
