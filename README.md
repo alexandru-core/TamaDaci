@@ -7,7 +7,7 @@
 [![CI](https://github.com/alexandru-core/TamaDaci/actions/workflows/ci.yml/badge.svg)](https://github.com/alexandru-core/TamaDaci/actions/workflows/ci.yml)
 ![Code](https://img.shields.io/badge/code-MIT-blue)
 ![Languages](https://img.shields.io/badge/languages-8-FFCB05)
-[![Stars](https://img.shields.io/github/stars/alexandru-core/TamaDaci?style=flat&logo=github&color=yellow)](https://github.com/socquique/TamaPoke/stargazers)
+[![Stars](https://img.shields.io/github/stars/alexandru-core/TamaDaci?style=flat&logo=github&color=yellow)](https://github.com/alexandru-core/TamaDaci/stargazers)
 
 A gen-1-Pokémon-inspired tamagotchi for the
 **Waveshare ESP32-S3-Touch-AMOLED-1.75** (round 466×466 AMOLED, CO5300 driver
