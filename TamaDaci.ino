@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.18"
+#define FW_VERSION "1.19"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -95,7 +95,7 @@ bool gameNewHi = false;
 struct FallingBerry { float x, y, vy; uint8_t kind; bool active; };
 FallingBerry fallingBerries[8];
 bool berryCatchOpen = false, berryExitTouch = false, berryFinished = false;
-uint32_t berryCatchUntil = 0, berryResultUntil = 0, berryCatchStarted = 0, lastBerryStep = 0, nextBerrySpawn = 0;
+uint32_t berryResultUntil = 0, berryCatchStarted = 0, lastBerryStep = 0, nextBerrySpawn = 0;
 float berryBasketX = 233;
 uint8_t berryScore = 0, berryMisses = 0, berryFavorites = 0, berryFoodGain = 0;
 bool berryNewHi = false;
@@ -1211,7 +1211,6 @@ void startBerryCatch() {
   berryCatchOpen = true;
   berryFinished = false;
   berryCatchStarted = millis();
-  berryCatchUntil = berryCatchStarted + 20000;
   berryResultUntil = 0;
   lastBerryStep = berryCatchStarted;
   nextBerrySpawn = berryCatchStarted + 900;
@@ -1278,7 +1277,7 @@ void stepBerryCatch() {
     b.active = false;
   }
 
-  if (berryMisses >= 3 || !timeLeft(berryCatchUntil)) finishBerryCatch();
+  if (berryMisses >= 3) finishBerryCatch();
 }
 
 void startGame() {
@@ -1647,16 +1646,9 @@ void renderBerryCatch() {
   setCur(centerX(score, 4), 24);
   printT(score);
 
-  uint32_t remain = timeLeft(berryCatchUntil);
-  uint8_t seconds = (remain + 999) / 1000;
-  char timer[8];
-  snprintf(timer, sizeof(timer), "0:%02u", seconds);
-  setSize(2);
-  setCur(centerX(timer, 2), 70);
-  printT(timer);
   for (int i = 0; i < 3; i++) {
-    if (i < 3 - berryMisses) gfx->fillCircle(190 + i * 26, 105, 6, UI_BAR_BAD);
-    else gfx->drawCircle(190 + i * 26, 105, 6, UI_TRACK);
+    if (i < 3 - berryMisses) gfx->fillCircle(180 + i * 28, 104, 6, UI_BAR_BAD);
+    else gfx->drawCircle(180 + i * 28, 104, 6, UI_TRACK);
   }
   setCur(centerX(T(S_DRAG_BASKET), 2), 126);
   printT(T(S_DRAG_BASKET));
@@ -1686,9 +1678,6 @@ void renderBerryCatch() {
   gfx->drawLine(bx, 359, bx, 377, C565(0xd5, 0xa2, 0x68));
   gfx->drawLine(bx + 30, 359, bx + 20, 376, C565(0xd5, 0xa2, 0x68));
 
-  gfx->fillRoundRect(92, 397, 282, 12, 4, UI_TRACK);
-  int fw = (int)(282UL * remain / 20000UL);
-  if (fw > 0) gfx->fillRoundRect(92, 397, fw, 12, 4, UI_BAR_OK);
   gfx->flush();
 }
 
