@@ -169,7 +169,7 @@ class TestSketchSanity(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
-        with open(os.path.join(ROOT, 'TamaPoke.ino')) as fh:
+        with open(os.path.join(ROOT, 'TamaDaci.ino')) as fh:
             cls.ino = fh.read()
 
     def test_el_sketch_no_lleva_caracteres_no_ascii_en_literales_de_pantalla(self):
@@ -179,11 +179,11 @@ class TestSketchSanity(unittest.TestCase):
             code = line.split('//')[0]
             for chunk in code.split('"')[1::2]:
                 self.assertTrue(chunk.isascii(),
-                                f'TamaPoke.ino:{lineno}: literal no ASCII: {chunk!r}')
+                                f'TamaDaci.ino:{lineno}: literal no ASCII: {chunk!r}')
 
     def test_las_llaves_estan_equilibradas(self):
         self.assertEqual(self.ino.count('{'), self.ino.count('}'),
-                         'llaves descompensadas en TamaPoke.ino')
+                         'llaves descompensadas en TamaDaci.ino')
 
 
 
@@ -228,7 +228,7 @@ class TestBuffersDeTexto(unittest.TestCase):
         ids = re.findall(r'\b(S_[A-Z0-9_]+)\b', cuerpo)
         filas = fmt.extract_table(leer('i18n.cpp'), 'STRINGS', len(cls.LANGS))
         cls.LIT = {sid: [fila[k] for fila in filas] for k, sid in enumerate(ids)}
-        cls.ino = leer('TamaPoke.ino').splitlines()
+        cls.ino = leer('TamaDaci.ino').splitlines()
         cls.APODO = int(re.search(r'char\s+nick\[(\d+)\]', leer('pet.h')).group(1)) - 1
         base = max(len(row[2].encode()) for row in DEX)
         cls.NOMBRE = {}
@@ -285,14 +285,14 @@ class TestBuffersDeTexto(unittest.TestCase):
             tam = next((int(d.group(1)) for k in range(n - 2, -1, -1)
                         for d in [re.search(r'\bchar\s+' + var + r'\s*\[(\d+)\]', self.ino[k])]
                         if d), None)
-            self.assertIsNotNone(tam, f'TamaPoke.ino:{n}: no encuentro la declaracion de {var}')
+            self.assertIsNotNone(tam, f'TamaDaci.ino:{n}: no encuentro la declaracion de {var}')
             revisadas += 1
             for li, lang in enumerate(self.LANGS):
                 with self.subTest(linea=n, id=sid, idioma=lang):
                     peor = self.peor_caso(sid, li)
                     self.assertLessEqual(
                         peor, tam,
-                        f'TamaPoke.ino:{n}: {var}[{tam}] con {sid} en {lang} necesita {peor} bytes')
+                        f'TamaDaci.ino:{n}: {var}[{tam}] con {sid} en {lang} necesita {peor} bytes')
         self.assertGreater(revisadas, 10, 'el patron de snprintf ya no encuentra las llamadas')
 
 if __name__ == '__main__':
