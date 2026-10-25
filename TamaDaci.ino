@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.19"
+#define FW_VERSION "1.20"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -1221,14 +1221,17 @@ void startBerryCatch() {
   sfxPlay(SFX_TAP);
 }
 
-void spawnBerry() {
+float berryCatchProgress(uint32_t now) {
+  float progress = (now - berryCatchStarted) / 45000.0f;
+  return progress > 1.0f ? 1.0f : progress;
+}
+
+void spawnBerry(float progress) {
   for (auto &b : fallingBerries) {
     if (b.active) continue;
     b.x = 86 + random(294);
     b.y = 126;
-    float progress = (millis() - berryCatchStarted) / 20000.0f;
-    if (progress > 1.0f) progress = 1.0f;
-    b.vy = 2.3f + random(10) / 10.0f + progress * 0.9f;
+    b.vy = 1.8f + random(9) / 10.0f + progress * 0.8f;
     b.kind = random(4);  // 0-2 bayas; 3 podrida
     b.active = true;
     return;
@@ -1252,11 +1255,14 @@ void stepBerryCatch() {
   if (k > 3.0f) k = 3.0f;
   lastBerryStep = now;
 
+  float progress = berryCatchProgress(now);
+  uint8_t activeBerries = 0;
+  for (const auto &b : fallingBerries)
+    if (b.active) activeBerries++;
+  uint8_t maxActiveBerries = progress >= 0.5f ? 4 : 3;
   if (now >= nextBerrySpawn) {
-    spawnBerry();
-    float progress = (now - berryCatchStarted) / 20000.0f;
-    if (progress > 1.0f) progress = 1.0f;
-    uint32_t delayMs = 1100 - (uint32_t)(progress * 350.0f);
+    if (activeBerries < maxActiveBerries) spawnBerry(progress);
+    uint32_t delayMs = 1600 - (uint32_t)(progress * 500.0f);
     nextBerrySpawn = now + delayMs;
   }
 
