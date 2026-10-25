@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.28"
+#define FW_VERSION "1.29"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -99,6 +99,17 @@ uint32_t berryResultUntil = 0, berryCatchStarted = 0, lastBerryStep = 0, nextBer
 float berryBasketX = 233;
 uint8_t berryScore = 0, berryMisses = 0, berryFavorites = 0, berryFoodGain = 0;
 bool berryNewHi = false;
+
+// Leaf Catcher: rotate a rim basket to catch wind-blown leaves.
+struct FlyingLeaf { float x, y, vx, vy; bool active; };
+FlyingLeaf flyingLeaves[8];
+bool leafCatcherOpen = false, leafExitTouch = false, leafFinished = false;
+bool leafWindWarning = false;
+uint32_t leafCatchStarted = 0, lastLeafStep = 0, nextLeafSpawn = 0;
+uint32_t nextWindChange = 0, leafWarningStarted = 0, leafResultUntil = 0;
+float leafBasketAngle = -1.5707963f;
+uint16_t leafScore = 0;
+uint8_t leafMisses = 0, leafWindDir = 0, leafNextWindDir = 0, leafWarningBeep = 0;
 
 // saco de entrenamiento (entrena la fuerza)
 bool sackOpen = false;
@@ -506,6 +517,27 @@ void handleTouch() {
   int16_t x, y;
   bool pressed = touch.getPoint(&x, &y, 1) > 0;
 
+  // Leaf Catcher captures a continuous drag to rotate the basket around the rim.
+  if (leafCatcherOpen || leafExitTouch) {
+    if (pressed) {
+      lastInteract = millis();
+      screenOff = false;
+      if (!wasPressed) {
+        int dx = x - CX, dy = y - CY;
+        leafExitTouch = (dx * dx + dy * dy < 48 * 48);
+        if (leafExitTouch) {
+          leafCatcherOpen = false;
+          gameMenuOpen = true;
+        }
+      }
+      if (!leafExitTouch) leafBasketAngle = atan2f((float)y - CY, (float)x - CX);
+    } else {
+      leafExitTouch = false;
+    }
+    wasPressed = pressed;
+    return;
+  }
+
   // Berry Catch captura el arrastre completo para mover la cesta sin soltar.
   if (berryCatchOpen || berryExitTouch) {
     if (pressed) {
@@ -676,6 +708,7 @@ void onTap(int16_t x, int16_t y) {
       if (index == 0) startGame();
       else if (index == 1) startBerryCatch();
       else if (index == 2) { gameMenuOpen = false; startSack(); }
+      else if (index == 3) startLeafCatcher();
     }
     return;
   }
@@ -1031,6 +1064,10 @@ void render() {
     renderGameMenu();
     return;
   }
+  if (leafCatcherOpen) {
+    renderLeafCatcher();
+    return;
+  }
   if (berryCatchOpen) {
     renderBerryCatch();
     return;
@@ -1180,6 +1217,213 @@ void openGameMenu() {
 
 void drawGameScene();
 
+void startLeafCatcher() {
+  if (pet.isEgg() || pet.sleeping || pet.ceremony) return;
+  gameMenuOpen = false;
+  leafCatcherOpen = true;
+  leafExitTouch = leafFinished = leafWindWarning = false;
+  leafCatchStarted = millis();
+  lastLeafStep = leafCatchStarted;
+  nextLeafSpawn = leafCatchStarted + 900;
+  nextWindChange = leafCatchStarted + 10000;
+  leafWarningStarted = leafResultUntil = 0;
+  leafScore = 0;
+  leafMisses = 0;
+  leafWindDir = random(8);
+  leafNextWindDir = leafWindDir;
+  leafWarningBeep = 0;
+  leafBasketAngle = -1.5707963f;
+  for (auto &leaf : flyingLeaves) leaf.active = false;
+  sfxPlay(SFX_TAP);
+}
+
+float leafDirectionAngle(uint8_t dir) {
+  return -1.5707963f + dir * 0.7853982f;
+}
+
+void spawnLeaf() {
+  for (auto &leaf : flyingLeaves) {
+    if (leaf.active) continue;
+    float angle = leafDirectionAngle(leafWindDir) + (random(401) - 200) * 0.001f;
+    float radius = 48 + random(34);
+    float speed = 1.8f + (leafScore / 10) * 0.20f;
+    if (speed > 5.0f) speed = 5.0f;
+    leaf.x = CX + cosf(angle) * radius;
+    leaf.y = CY + sinf(angle) * radius;
+    leaf.vx = cosf(angle) * speed;
+    leaf.vy = sinf(angle) * speed;
+    leaf.active = true;
+    return;
+  }
+}
+
+void finishLeafCatcher() {
+  if (leafFinished) return;
+  leafFinished = true;
+  leafResultUntil = millis() + 4000;
+  pet.playResult(leafScore);
+  sfxPlay(leafScore > 0 ? SFX_MEDAL : SFX_LEVEL);
+}
+
+void stepLeafCatcher() {
+  if (leafFinished) return;
+  uint32_t now = millis();
+  float k = lastLeafStep ? (now - lastLeafStep) / 85.0f : 1.0f;
+  if (k > 3.0f) k = 3.0f;
+  lastLeafStep = now;
+
+  if (!leafWindWarning && (int32_t)(now - (nextWindChange - 2200)) >= 0) {
+    leafWindWarning = true;
+    leafWarningStarted = now;
+    leafWarningBeep = 0;
+    leafNextWindDir = (leafWindDir + 1 + random(7)) % 8;
+  }
+  static const uint16_t beepAtMs[] = { 0, 650, 1120, 1480 };
+  if (leafWindWarning && leafWarningBeep < 4 &&
+      now - leafWarningStarted >= beepAtMs[leafWarningBeep]) {
+    sfxPlay(SFX_TAP);
+    leafWarningBeep++;
+  }
+  if ((int32_t)(now - nextWindChange) >= 0) {
+    leafWindDir = leafNextWindDir;
+    leafWindWarning = false;
+    nextWindChange = now + 10000;
+    sfxPlay(SFX_LEVEL);
+  }
+
+  uint8_t activeLeaves = 0;
+  for (const auto &leaf : flyingLeaves)
+    if (leaf.active) activeLeaves++;
+  uint8_t maxActiveLeaves = 3 + leafScore / 15;
+  if (maxActiveLeaves > 8) maxActiveLeaves = 8;
+  if ((int32_t)(now - nextLeafSpawn) >= 0) {
+    uint8_t batch = 1 + leafScore / 30;
+    if (batch > 3) batch = 3;
+    for (uint8_t i = 0; i < batch && activeLeaves < maxActiveLeaves; i++) {
+      spawnLeaf();
+      activeLeaves++;
+    }
+    uint32_t delayMs = 1500;
+    uint32_t reduction = (uint32_t)leafScore * 18;
+    if (reduction > 850) reduction = 850;
+    delayMs -= reduction;
+    if (delayMs < 650) delayMs = 650;
+    nextLeafSpawn = now + delayMs;
+  }
+
+  for (auto &leaf : flyingLeaves) {
+    if (!leaf.active) continue;
+    leaf.x += leaf.vx * k;
+    leaf.y += leaf.vy * k;
+    float dx = leaf.x - CX, dy = leaf.y - CY;
+    if (dx * dx + dy * dy < 205.0f * 205.0f) continue;
+
+    float angle = atan2f(dy, dx);
+    float diff = atan2f(sinf(angle - leafBasketAngle), cosf(angle - leafBasketAngle));
+    if (fabsf(diff) <= 0.25f) {
+      leafScore++;
+      sfxPlay(SFX_TAP);
+    } else if (leafMisses < 3) {
+      leafMisses++;
+      sfxPlay(SFX_DENY);
+    }
+    leaf.active = false;
+  }
+  if (leafMisses >= 3) finishLeafCatcher();
+}
+
+void drawLeafArrow(float angle, uint16_t color) {
+  int x1 = CX + (int)(cosf(angle) * 18), y1 = CY + (int)(sinf(angle) * 18);
+  int x2 = CX + (int)(cosf(angle) * 43), y2 = CY + (int)(sinf(angle) * 43);
+  gfx->drawLine(x1, y1, x2, y2, color);
+  float backX = -cosf(angle), backY = -sinf(angle);
+  for (int side = -1; side <= 1; side += 2) {
+    float sideX = -sinf(angle) * side, sideY = cosf(angle) * side;
+    gfx->drawLine(x2, y2,
+                  x2 + (int)(backX * 10 + sideX * 6),
+                  y2 + (int)(backY * 10 + sideY * 6), color);
+  }
+}
+
+void drawLeafBasket() {
+  float rx = cosf(leafBasketAngle), ry = sinf(leafBasketAngle);
+  float tx = -ry, ty = rx;
+  int bx = CX + (int)(rx * 202), by = CY + (int)(ry * 202);
+  int x1 = bx + (int)(tx * 25), y1 = by + (int)(ty * 25);
+  int x2 = bx - (int)(tx * 25), y2 = by - (int)(ty * 25);
+  int x3 = bx - (int)(rx * 20) - (int)(tx * 17);
+  int y3 = by - (int)(ry * 20) - (int)(ty * 17);
+  int x4 = bx - (int)(rx * 20) + (int)(tx * 17);
+  int y4 = by - (int)(ry * 20) + (int)(ty * 17);
+  uint16_t wood = C565(0xb4, 0x78, 0x45);
+  uint16_t rim = C565(0x6d, 0x43, 0x2c);
+  gfx->fillTriangle(x1, y1, x2, y2, x3, y3, wood);
+  gfx->fillTriangle(x1, y1, x3, y3, x4, y4, wood);
+  gfx->drawLine(x1, y1, x2, y2, rim);
+  gfx->drawLine(x1, y1, x4, y4, rim);
+  gfx->drawLine(x2, y2, x3, y3, rim);
+  gfx->drawLine(x3, y3, x4, y4, rim);
+}
+
+void renderLeafCatcher() {
+  bool night = sceneHour() < 6 || sceneHour() >= 20;
+  uint16_t ink = night ? UI_INK_NIGHT : UI_INK;
+  drawGameScene();
+
+  if (leafFinished) {
+    if (!timeLeft(leafResultUntil)) {
+      leafCatcherOpen = false;
+      gameMenuOpen = true;
+      return;
+    }
+    char score[24];
+    snprintf(score, sizeof(score), T(S_SCORE_FMT), (unsigned)leafScore);
+    gfx->setTextColor(ink);
+    setSize(4);
+    setCur(centerX(score, 4), 160);
+    printT(score);
+    setSize(2);
+    setCur(centerX(T(S_DETAIL_BACK), 2), 224);
+    printT(T(S_DETAIL_BACK));
+    gfx->flush();
+    return;
+  }
+
+  stepLeafCatcher();
+  char score[8];
+  snprintf(score, sizeof(score), "%u", (unsigned)leafScore);
+  gfx->setTextColor(ink);
+  setSize(4);
+  setCur(centerX(score, 4), 22);
+  printT(score);
+  for (int i = 0; i < 3; i++) {
+    if (i < 3 - leafMisses) gfx->fillCircle(186 + i * 24, 76, 5, UI_BAR_OK);
+    else gfx->drawCircle(186 + i * 24, 76, 5, UI_TRACK);
+  }
+
+  gfx->drawCircle(CX, CY, 205, UI_TRACK);
+  drawLeafArrow(leafDirectionAngle(leafWindDir), C565(0x54, 0x9a, 0x55));
+  if (leafWindWarning && ((millis() / 150) & 1))
+    drawLeafArrow(leafDirectionAngle(leafNextWindDir), UI_BAR_WARN);
+
+  for (auto &leaf : flyingLeaves) {
+    if (!leaf.active) continue;
+    uint16_t green = C565(0x65, 0xa8, 0x50);
+    gfx->fillEllipse((int)leaf.x, (int)leaf.y, 7, 11, green);
+    gfx->drawLine((int)leaf.x - 5, (int)leaf.y + 7,
+                  (int)leaf.x + 6, (int)leaf.y - 7, C565(0x3b, 0x68, 0x35));
+  }
+  drawLeafBasket();
+
+  gfx->fillCircle(CX, CY, 18, UI_WHITE);
+  gfx->drawCircle(CX, CY, 18, ink);
+  gfx->setTextColor(ink);
+  setSize(1);
+  setCur(CX - 8, CY - 4);
+  printT("X");
+  gfx->flush();
+}
+
 void renderGameMenu() {
   drawGameScene();
   gfx->setTextColor(inkColor());
@@ -1193,7 +1437,7 @@ void renderGameMenu() {
     int col = i % 3, row = i / 3;
     int x = gridX + col * (cellW + colGap);
     int y = gridY + row * (cellH + rowGap);
-    bool available = i < 3;
+    bool available = i < 4;
     gfx->fillRoundRect(x, y, cellW, cellH, 12, UI_WHITE);
     gfx->drawRoundRect(x, y, cellW, cellH, 12, available ? inkColor() : UI_TRACK);
 
@@ -1215,15 +1459,21 @@ void renderGameMenu() {
       gfx->fillCircle(cx - 12, y + 21, 5, C565(0xe8, 0x45, 0x56));
       gfx->fillCircle(cx, y + 21, 5, C565(0x42, 0x88, 0xe0));
       gfx->fillCircle(cx + 12, y + 21, 5, C565(0x55, 0xb8, 0x63));
-    } else {
+    } else if (i == 2) {
       gfx->fillRoundRect(cx - 15, y + 7, 30, 27, 7, C565(0xa4, 0x6a, 0x42));
       gfx->drawRoundRect(cx - 15, y + 7, 30, 27, 7, inkColor());
       gfx->fillRoundRect(cx - 8, y + 3, 16, 7, 3, C565(0x6b, 0x43, 0x2d));
+    } else {
+      gfx->fillEllipse(cx, y + 20, 8, 13, C565(0x63, 0xa7, 0x4f));
+      gfx->drawLine(cx - 6, y + 28, cx + 7, y + 12, C565(0x3b, 0x68, 0x35));
+      gfx->fillEllipse(cx + 11, y + 18, 6, 10, C565(0x8b, 0xc7, 0x64));
+      gfx->drawLine(cx + 8, y + 25, cx + 15, y + 12, C565(0x3b, 0x68, 0x35));
     }
 
     const char *label = i == 0 ? T(S_BALL_GAME)
                         : i == 1 ? T(S_BERRY_CATCH)
-                                 : T(S_TRAIN_STR);
+                        : i == 2 ? T(S_TRAIN_STR)
+                                 : "Leaf Catcher";
     gfx->setTextColor(inkColor());
     setSize(1);
     setCur(centerX(label, 1), y + 47);
