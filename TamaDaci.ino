@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.29"
+#define FW_VERSION "1.30"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -101,7 +101,7 @@ uint8_t berryScore = 0, berryMisses = 0, berryFavorites = 0, berryFoodGain = 0;
 bool berryNewHi = false;
 
 // Leaf Catcher: rotate a rim basket to catch wind-blown leaves.
-struct FlyingLeaf { float x, y, vx, vy; bool active; };
+struct FlyingLeaf { float x, y, vx, vy; bool active, caught; uint32_t caughtAt; };
 FlyingLeaf flyingLeaves[8];
 bool leafCatcherOpen = false, leafExitTouch = false, leafFinished = false;
 bool leafWindWarning = false;
@@ -352,7 +352,7 @@ void loop() {
   // volcado). Es la mayor carga evitable de la placa. Cada render repinta la
   // escena entera, asi que no queda nada a medias; y al quedarse lastRender
   // congelado, el primer frame tras despertar sale en el acto.
-  if (!screenOff && now - lastRender >= (uint32_t)((gameOpen || berryCatchOpen || gameMenuOpen || sackOpen) ? 85 : 100)) {
+  if (!screenOff && now - lastRender >= (uint32_t)((gameOpen || berryCatchOpen || leafCatcherOpen || gameMenuOpen || sackOpen) ? 85 : 100)) {
     lastRender = now;
     render();
   }
@@ -1244,14 +1244,19 @@ float leafDirectionAngle(uint8_t dir) {
 void spawnLeaf() {
   for (auto &leaf : flyingLeaves) {
     if (leaf.active) continue;
-    float angle = leafDirectionAngle(leafWindDir) + (random(401) - 200) * 0.001f;
-    float radius = 48 + random(34);
+    // Wind points toward the direction leaves travel. Spawn on the opposite
+    // edge so each leaf enters from outside the display and moves inward.
+    float angle = leafDirectionAngle(leafWindDir) + PI +
+                  (random(401) - 200) * 0.001f;
+    float radius = 225 + random(9);
     float speed = 1.8f + (leafScore / 10) * 0.20f;
     if (speed > 5.0f) speed = 5.0f;
     leaf.x = CX + cosf(angle) * radius;
     leaf.y = CY + sinf(angle) * radius;
-    leaf.vx = cosf(angle) * speed;
-    leaf.vy = sinf(angle) * speed;
+    leaf.vx = cosf(angle + PI) * speed;
+    leaf.vy = sinf(angle + PI) * speed;
+    leaf.caught = false;
+    leaf.caughtAt = 0;
     leaf.active = true;
     return;
   }
@@ -1313,48 +1318,67 @@ void stepLeafCatcher() {
 
   for (auto &leaf : flyingLeaves) {
     if (!leaf.active) continue;
+    if (leaf.caught) {
+      if (now - leaf.caughtAt >= 520) leaf.active = false;
+      continue;
+    }
+    float beforeX = leaf.x - CX, beforeY = leaf.y - CY;
+    float beforeR2 = beforeX * beforeX + beforeY * beforeY;
     leaf.x += leaf.vx * k;
     leaf.y += leaf.vy * k;
     float dx = leaf.x - CX, dy = leaf.y - CY;
-    if (dx * dx + dy * dy < 205.0f * 205.0f) continue;
-
-    float angle = atan2f(dy, dx);
-    float diff = atan2f(sinf(angle - leafBasketAngle), cosf(angle - leafBasketAngle));
-    if (fabsf(diff) <= 0.25f) {
-      leafScore++;
-      sfxPlay(SFX_TAP);
-    } else if (leafMisses < 3) {
-      leafMisses++;
-      sfxPlay(SFX_DENY);
+    float radius2 = dx * dx + dy * dy;
+    // Resolve the catch when the incoming leaf reaches the basket's rim.
+    if (beforeR2 >= 202.0f * 202.0f && radius2 < 202.0f * 202.0f) {
+      float angle = atan2f(dy, dx);
+      float diff = atan2f(sinf(angle - leafBasketAngle), cosf(angle - leafBasketAngle));
+      if (fabsf(diff) <= 0.32f) {
+        leafScore++;
+        leaf.caught = true;
+        leaf.caughtAt = now;
+        sfxPlay(SFX_TAP);
+      } else if (leafMisses < 3) {
+        leafMisses++;
+        leaf.active = false;
+        sfxPlay(SFX_DENY);
+      }
+    } else if (!leaf.caught && radius2 < 36.0f * 36.0f) {
+      // A missed leaf has crossed the playable area; remove it cleanly.
+      leaf.active = false;
     }
-    leaf.active = false;
   }
   if (leafMisses >= 3) finishLeafCatcher();
 }
 
-void drawLeafArrow(float angle, uint16_t color) {
-  int x1 = CX + (int)(cosf(angle) * 18), y1 = CY + (int)(sinf(angle) * 18);
-  int x2 = CX + (int)(cosf(angle) * 43), y2 = CY + (int)(sinf(angle) * 43);
+void drawLeafArrow(float angle, uint16_t color, int cx, int cy) {
+  int x1 = cx - (int)(cosf(angle) * 11), y1 = cy - (int)(sinf(angle) * 11);
+  int x2 = cx + (int)(cosf(angle) * 11), y2 = cy + (int)(sinf(angle) * 11);
   gfx->drawLine(x1, y1, x2, y2, color);
   float backX = -cosf(angle), backY = -sinf(angle);
   for (int side = -1; side <= 1; side += 2) {
     float sideX = -sinf(angle) * side, sideY = cosf(angle) * side;
     gfx->drawLine(x2, y2,
-                  x2 + (int)(backX * 10 + sideX * 6),
-                  y2 + (int)(backY * 10 + sideY * 6), color);
+                  x2 + (int)(backX * 7 + sideX * 5),
+                  y2 + (int)(backY * 7 + sideY * 5), color);
   }
+}
+
+void drawLeafArrows(float angle, uint16_t color) {
+  float px = -sinf(angle) * 17.0f, py = cosf(angle) * 17.0f;
+  for (int i = -1; i <= 1; i++)
+    drawLeafArrow(angle, color, CX + (int)(px * i), CY + (int)(py * i));
 }
 
 void drawLeafBasket() {
   float rx = cosf(leafBasketAngle), ry = sinf(leafBasketAngle);
   float tx = -ry, ty = rx;
   int bx = CX + (int)(rx * 202), by = CY + (int)(ry * 202);
-  int x1 = bx + (int)(tx * 25), y1 = by + (int)(ty * 25);
-  int x2 = bx - (int)(tx * 25), y2 = by - (int)(ty * 25);
-  int x3 = bx - (int)(rx * 20) - (int)(tx * 17);
-  int y3 = by - (int)(ry * 20) - (int)(ty * 17);
-  int x4 = bx - (int)(rx * 20) + (int)(tx * 17);
-  int y4 = by - (int)(ry * 20) + (int)(ty * 17);
+  int x1 = bx + (int)(tx * 32), y1 = by + (int)(ty * 32);
+  int x2 = bx - (int)(tx * 32), y2 = by - (int)(ty * 32);
+  int x3 = bx - (int)(rx * 24) - (int)(tx * 20);
+  int y3 = by - (int)(ry * 24) - (int)(ty * 20);
+  int x4 = bx - (int)(rx * 24) + (int)(tx * 20);
+  int y4 = by - (int)(ry * 24) + (int)(ty * 20);
   uint16_t wood = C565(0xb4, 0x78, 0x45);
   uint16_t rim = C565(0x6d, 0x43, 0x2c);
   gfx->fillTriangle(x1, y1, x2, y2, x3, y3, wood);
@@ -1402,18 +1426,27 @@ void renderLeafCatcher() {
   }
 
   gfx->drawCircle(CX, CY, 205, UI_TRACK);
-  drawLeafArrow(leafDirectionAngle(leafWindDir), C565(0x54, 0x9a, 0x55));
-  if (leafWindWarning && ((millis() / 150) & 1))
-    drawLeafArrow(leafDirectionAngle(leafNextWindDir), UI_BAR_WARN);
+  bool showNextWind = leafWindWarning && ((millis() / 150) & 1);
+  drawLeafArrows(leafDirectionAngle(showNextWind ? leafNextWindDir : leafWindDir),
+                 showNextWind ? UI_BAR_WARN : C565(0x54, 0x9a, 0x55));
 
+  // Draw the basket first so caught leaves sit visibly inside it during their
+  // short catch animation instead of appearing to pass through.
+  drawLeafBasket();
   for (auto &leaf : flyingLeaves) {
     if (!leaf.active) continue;
-    uint16_t green = C565(0x65, 0xa8, 0x50);
-    gfx->fillEllipse((int)leaf.x, (int)leaf.y, 7, 11, green);
-    gfx->drawLine((int)leaf.x - 5, (int)leaf.y + 7,
-                  (int)leaf.x + 6, (int)leaf.y - 7, C565(0x3b, 0x68, 0x35));
+    uint16_t green = leaf.caught ? C565(0xf0, 0xd0, 0x68) : C565(0x65, 0xa8, 0x50);
+    int lx = (int)leaf.x, ly = (int)leaf.y;
+    if (leaf.caught) {
+      float pulse = 1.0f + 0.18f * sinf((millis() - leaf.caughtAt) * 0.03f);
+      lx = CX + (int)(cosf(leafBasketAngle) * 202);
+      ly = CY + (int)(sinf(leafBasketAngle) * 202);
+      gfx->fillEllipse(lx, ly, (int)(8 * pulse), (int)(12 * pulse), green);
+    } else {
+      gfx->fillEllipse(lx, ly, 7, 11, green);
+    }
+    gfx->drawLine(lx - 5, ly + 7, lx + 6, ly - 7, C565(0x3b, 0x68, 0x35));
   }
-  drawLeafBasket();
 
   gfx->fillCircle(CX, CY, 18, UI_WHITE);
   gfx->drawCircle(CX, CY, 18, ink);
