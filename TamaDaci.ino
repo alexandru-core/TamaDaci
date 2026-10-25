@@ -662,7 +662,7 @@ void onTap(int16_t x, int16_t y) {
     return;
   }
   if (gameMenuOpen) {
-    if (y < 82) { gameMenuOpen = false; return; }
+    if (y < 82 || (y >= 340 && y <= 390)) { gameMenuOpen = false; return; }
     if (x >= 52 && x <= 414 && y >= 120 && y <= 215) startGame();
     else if (x >= 52 && x <= 414 && y >= 226 && y <= 326) startBerryCatch();
     return;
@@ -1180,10 +1180,6 @@ void renderGameMenu() {
   setSize(2);
   setCur(145, 148);
   printT(T(S_BALL_GAME));
-  setSize(1);
-  setCur(145, 178);
-  printT(T(S_HIT_FAST));
-
   gfx->fillRoundRect(58, 226, 350, 100, 18, UI_WHITE);
   gfx->drawRoundRect(58, 226, 350, 100, 18, inkColor());
   gfx->fillRoundRect(82, 254, 70, 48, 8, C565(0x9a, 0x64, 0x3b));
