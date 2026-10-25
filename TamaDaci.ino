@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.27"
+#define FW_VERSION "1.28"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -663,8 +663,20 @@ void onTap(int16_t x, int16_t y) {
   }
   if (gameMenuOpen) {
     if (y < 82 || (y >= 340 && y <= 390)) { gameMenuOpen = false; return; }
-    if (x >= 52 && x <= 414 && y >= 120 && y <= 215) startGame();
-    else if (x >= 52 && x <= 414 && y >= 226 && y <= 326) startBerryCatch();
+    const int gridX = 46, gridY = 92, cellW = 118, cellH = 74;
+    const int colGap = 10, rowGap = 8;
+    if (x >= gridX && x < gridX + 3 * cellW + 2 * colGap &&
+        y >= gridY && y < gridY + 3 * cellH + 2 * rowGap) {
+      int col = (x - gridX) / (cellW + colGap);
+      int row = (y - gridY) / (cellH + rowGap);
+      int index = row * 3 + col;
+      int localX = (x - gridX) % (cellW + colGap);
+      int localY = (y - gridY) % (cellH + rowGap);
+      if (localX >= cellW || localY >= cellH) return;
+      if (index == 0) startGame();
+      else if (index == 1) startBerryCatch();
+      else if (index == 2) { gameMenuOpen = false; startSack(); }
+    }
     return;
   }
   if (gameOpen) {
@@ -1172,31 +1184,51 @@ void renderGameMenu() {
   drawGameScene();
   gfx->setTextColor(inkColor());
   setSize(3);
-  setCur(centerX(T(S_GAMES_TITLE), 3), 46);
+  setCur(centerX(T(S_GAMES_TITLE), 3), 42);
   printT(T(S_GAMES_TITLE));
 
-  gfx->fillRoundRect(58, 120, 350, 94, 18, UI_WHITE);
-  gfx->drawRoundRect(58, 120, 350, 94, 18, inkColor());
-  drawMap(SPR_ICON_PLAY, 16, 80, 150, 3, false);
-  gfx->setTextColor(inkColor());
-  setSize(2);
-  setCur(145, 148);
-  printT(T(S_BALL_GAME));
-  gfx->fillRoundRect(58, 226, 350, 100, 18, UI_WHITE);
-  gfx->drawRoundRect(58, 226, 350, 100, 18, inkColor());
-  gfx->fillRoundRect(82, 254, 70, 48, 8, C565(0x9a, 0x64, 0x3b));
-  gfx->drawRoundRect(82, 254, 70, 48, 8, inkColor());
-  gfx->fillRect(76, 250, 82, 6, C565(0x64, 0x3e, 0x2b));
-  gfx->fillCircle(98, 262, 7, C565(0xe8, 0x45, 0x56));
-  gfx->fillCircle(118, 262, 7, C565(0x42, 0x88, 0xe0));
-  gfx->fillCircle(138, 262, 7, C565(0x55, 0xb8, 0x63));
-  gfx->setTextColor(inkColor());
-  setSize(2);
-  setCur(170, 250);
-  printT(T(S_BERRY_CATCH));
-  setSize(1);
-  setCur(170, 282);
-  printT(T(S_DRAG_BASKET));
+  const int gridX = 46, gridY = 92, cellW = 118, cellH = 74;
+  const int colGap = 10, rowGap = 8;
+  for (int i = 0; i < 9; i++) {
+    int col = i % 3, row = i / 3;
+    int x = gridX + col * (cellW + colGap);
+    int y = gridY + row * (cellH + rowGap);
+    bool available = i < 3;
+    gfx->fillRoundRect(x, y, cellW, cellH, 12, UI_WHITE);
+    gfx->drawRoundRect(x, y, cellW, cellH, 12, available ? inkColor() : UI_TRACK);
+
+    if (!available) {
+      gfx->setTextColor(UI_TRACK);
+      setSize(5);
+      setCur(x + 43, y + 10);
+      printT("?");
+      continue;
+    }
+
+    int cx = x + cellW / 2;
+    if (i == 0) {
+      drawMap(SPR_ICON_PLAY, 16, cx - 16, y + 5, 2, false);
+    } else if (i == 1) {
+      gfx->fillRoundRect(cx - 22, y + 10, 44, 22, 5, C565(0x9a, 0x64, 0x3b));
+      gfx->drawRoundRect(cx - 22, y + 10, 44, 22, 5, inkColor());
+      gfx->fillRect(cx - 26, y + 8, 52, 5, C565(0x64, 0x3e, 0x2b));
+      gfx->fillCircle(cx - 12, y + 21, 5, C565(0xe8, 0x45, 0x56));
+      gfx->fillCircle(cx, y + 21, 5, C565(0x42, 0x88, 0xe0));
+      gfx->fillCircle(cx + 12, y + 21, 5, C565(0x55, 0xb8, 0x63));
+    } else {
+      gfx->fillRoundRect(cx - 15, y + 7, 30, 27, 7, C565(0xa4, 0x6a, 0x42));
+      gfx->drawRoundRect(cx - 15, y + 7, 30, 27, 7, inkColor());
+      gfx->fillRoundRect(cx - 8, y + 3, 16, 7, 3, C565(0x6b, 0x43, 0x2d));
+    }
+
+    const char *label = i == 0 ? T(S_BALL_GAME)
+                        : i == 1 ? T(S_BERRY_CATCH)
+                                 : T(S_TRAIN_STR);
+    gfx->setTextColor(inkColor());
+    setSize(1);
+    setCur(centerX(label, 1), y + 47);
+    printT(label);
+  }
 
   setSize(2);
   gfx->setTextColor(UI_TRACK);
