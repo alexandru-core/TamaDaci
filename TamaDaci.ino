@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.31"
+#define FW_VERSION "1.32"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -1249,8 +1249,8 @@ void spawnLeaf() {
     float windAngle = leafDirectionAngle(leafWindDir);
     float angle = windAngle + PI + (random(401) - 200) * 0.001f;
     float radius = 225 + random(9);
-    float speed = 1.8f + (leafScore / 10) * 0.20f;
-    if (speed > 5.0f) speed = 5.0f;
+    float speed = 2.8f + (leafScore / 10) * 0.30f;
+    if (speed > 6.5f) speed = 6.5f;
     leaf.x = CX + cosf(angle) * radius;
     leaf.y = CY + sinf(angle) * radius;
     leaf.vx = cosf(windAngle) * speed;
@@ -1427,9 +1427,25 @@ void renderLeafCatcher() {
   }
 
   gfx->drawCircle(CX, CY, 205, UI_TRACK);
-  bool showNextWind = leafWindWarning && ((millis() / 150) & 1);
-  drawLeafArrows(leafDirectionAngle(showNextWind ? leafNextWindDir : leafWindDir),
-                 showNextWind ? UI_BAR_WARN : C565(0x54, 0x9a, 0x55));
+  uint32_t now = millis();
+  bool showNextWind = leafWindWarning && ((now / 150) & 1);
+  float arrowAngle = leafDirectionAngle(showNextWind ? leafNextWindDir : leafWindDir);
+  uint16_t arrowColor = showNextWind ? UI_BAR_WARN : C565(0x54, 0x9a, 0x55);
+  // Pulse the center arrows continuously in the current wind direction; blink
+  // and switch to amber while warning that a direction change is coming.
+  float pulse = 0.72f + 0.28f * (0.5f + 0.5f * sinf(now * 0.012f));
+  if (!showNextWind || !leafWindWarning) {
+    int offset = (int)(5.0f * sinf(now * 0.012f));
+    drawLeafArrows(arrowAngle, arrowColor);
+    // A bright, moving center chevron makes the direction easy to notice.
+    drawLeafArrow(arrowAngle, C565((uint8_t)(0x70 + 0x8f * pulse),
+                                   (uint8_t)(0x90 + 0x6f * pulse),
+                                   (uint8_t)(0x50 + 0x50 * pulse)),
+                  CX + (int)(cosf(arrowAngle) * offset),
+                  CY + (int)(sinf(arrowAngle) * offset));
+  } else {
+    drawLeafArrows(arrowAngle, arrowColor);
+  }
 
   // Draw the basket first so caught leaves sit visibly inside it during their
   // short catch animation instead of appearing to pass through.
@@ -1449,12 +1465,7 @@ void renderLeafCatcher() {
     gfx->drawLine(lx - 5, ly + 7, lx + 6, ly - 7, C565(0x3b, 0x68, 0x35));
   }
 
-  gfx->fillCircle(CX, CY, 18, UI_WHITE);
-  gfx->drawCircle(CX, CY, 18, ink);
-  gfx->setTextColor(ink);
-  setSize(1);
-  setCur(CX - 8, CY - 4);
-  printT("X");
+  // Keep the center clear so the wind arrows and crossing leaves remain visible.
   gfx->flush();
 }
 
