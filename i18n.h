@@ -60,7 +60,7 @@ enum StrId : uint8_t {
   S_EVO_Q, S_EVO_KEEP, S_FAR_Q, S_FAR_GO, S_FAR_STAY,
   S_CHOOSE_STARTER,  // titulo de la eleccion del inicial (primera vez)
   S_NO_SPRITES, S_LOAD_SPRITES,  // aviso cuando falta el sprite en la SD
-  S_GAMES_TITLE, S_BALL_GAME, S_BERRY_CATCH, S_DRAG_BASKET, S_FOOD_GAIN_FMT,
+  S_GAMES_TITLE, S_BALL_GAME, S_BERRY_CATCH, S_DRAG_BASKET, S_FOOD_LABEL,
   STR_COUNT
 };
 
