@@ -93,7 +93,7 @@ bool gameNewHi = false;
 
 // Berry Catch: arrastra la cesta para atrapar bayas y esquivar las podridas.
 struct FallingBerry { float x, y, vy; uint8_t kind; bool active; };
-FallingBerry fallingBerries[4];
+FallingBerry fallingBerries[8];
 bool berryCatchOpen = false, berryExitTouch = false, berryFinished = false;
 uint32_t berryCatchUntil = 0, berryResultUntil = 0, lastBerryStep = 0, nextBerrySpawn = 0;
 float berryBasketX = 233;
@@ -1224,7 +1224,7 @@ void spawnBerry() {
     if (b.active) continue;
     b.x = 86 + random(294);
     b.y = 126;
-    b.vy = 2.0f + random(13) / 10.0f + berryScore * 0.035f;
+    b.vy = 3.5f + random(16) / 10.0f + berryScore * 0.035f;
     b.kind = random(4);  // 0-2 bayas; 3 podrida
     b.active = true;
     return;
