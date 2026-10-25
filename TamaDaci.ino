@@ -1609,11 +1609,17 @@ void renderBerryCatch() {
     setCur(centerX(rec, 2), 198);
     printT(rec);
 
-    char food[24];
-    snprintf(food, sizeof(food), T(S_FOOD_GAIN_FMT), berryFoodGain);
+    const char *food = T(S_FOOD_LABEL);
+    char gain[8];
+    snprintf(gain, sizeof(gain), "+%u", berryFoodGain);
     gfx->setTextColor(UI_BAR_OK);
-    setCur(centerX(food, 2), 238);
+    setSize(2);
+    int foodW = textW(food, 2), gainW = textW(gain, 2);
+    int foodX = (466 - foodW - gainW - 12) / 2;
+    setCur(foodX, 238);
     printT(food);
+    setCur(foodX + foodW + 12, 238);
+    printT(gain);
     if (berryFavorites) {
       gfx->setTextColor(UI_BAR_WARN);
       setCur(centerX(T(S_LIKES), 2), 276);
