@@ -81,6 +81,7 @@ struct { int16_t x, y; uint8_t r, ph; } bubbles[14];
 uint32_t feedMenuUntil = 0;   // selector de comida abierto hasta este millis
 
 // minijuego "toques": mantener la pokeball en el aire
+bool gameMenuOpen = false;
 bool gameOpen = false;
 uint32_t gameOverUntil = 0;
 float ballX, ballY, ballVX, ballVY, gamePetX;
@@ -89,6 +90,15 @@ uint8_t gameScore, gameMisses;
 float hitX, hitY;             // ultimo golpe (anillo de impacto)
 uint32_t hitTime = 0;
 bool gameNewHi = false;
+
+// Berry Catch: arrastra la cesta para atrapar bayas y esquivar las podridas.
+struct FallingBerry { float x, y, vy; uint8_t kind; bool active; };
+FallingBerry fallingBerries[4];
+bool berryCatchOpen = false, berryExitTouch = false, berryFinished = false;
+uint32_t berryCatchUntil = 0, berryResultUntil = 0, lastBerryStep = 0, nextBerrySpawn = 0;
+float berryBasketX = 233;
+uint8_t berryScore = 0, berryMisses = 0, berryFavorites = 0, berryFoodGain = 0;
+bool berryNewHi = false;
 
 // saco de entrenamiento (entrena la fuerza)
 bool sackOpen = false;
@@ -331,7 +341,7 @@ void loop() {
   // volcado). Es la mayor carga evitable de la placa. Cada render repinta la
   // escena entera, asi que no queda nada a medias; y al quedarse lastRender
   // congelado, el primer frame tras despertar sale en el acto.
-  if (!screenOff && now - lastRender >= (uint32_t)((gameOpen || sackOpen) ? 85 : 100)) {
+  if (!screenOff && now - lastRender >= (uint32_t)((gameOpen || berryCatchOpen || gameMenuOpen || sackOpen) ? 85 : 100)) {
     lastRender = now;
     render();
   }
@@ -496,6 +506,27 @@ void handleTouch() {
   int16_t x, y;
   bool pressed = touch.getPoint(&x, &y, 1) > 0;
 
+  // Berry Catch captura el arrastre completo para mover la cesta sin soltar.
+  if (berryCatchOpen || berryExitTouch) {
+    if (pressed) {
+      lastInteract = millis();
+      screenOff = false;
+      if (!wasPressed) berryExitTouch = y < 72;
+      if (berryExitTouch) {
+        if (!wasPressed) {
+          berryCatchOpen = false;
+          gameMenuOpen = true;
+        }
+      } else {
+        berryBasketX = x < 70 ? 70 : (x > 396 ? 396 : x);
+      }
+    } else {
+      berryExitTouch = false;
+    }
+    wasPressed = pressed;
+    return;
+  }
+
   // saco de entrenamiento: cada toque cuenta al instante (aporrear rapido)
   if (sackOpen) {
     if (pressed && !wasPressed) {
@@ -543,7 +574,7 @@ void openClock();  // prototipo
 
 void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
-  if (gameOpen || galleryOpen || kbOpen || sackOpen || pet.ceremony) return;
+  if (gameMenuOpen || gameOpen || berryCatchOpen || galleryOpen || kbOpen || sackOpen || pet.ceremony) return;
   if (clockOpen) { clockOpen = false; return; }
   if (cardOpen) {
     if (dir < 0) cardOpen = false;  // arriba cierra la ficha
@@ -560,7 +591,7 @@ void onSwipeV(int dir) {
 // deslizar: dir +1 = hacia la derecha
 void onSwipe(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
-  if (gameOpen || kbOpen || clockOpen) return;
+  if (gameMenuOpen || gameOpen || berryCatchOpen || kbOpen || clockOpen) return;
   if (cardOpen) {  // dentro de la ficha: cambiar entre las 4 paginas
     int p = (int)cardPage + (dir > 0 ? -1 : 1);  // izquierda avanza
     cardPage = p < 0 ? 0 : (p > 3 ? 3 : p);
@@ -630,6 +661,12 @@ void onTap(int16_t x, int16_t y) {
     }
     return;
   }
+  if (gameMenuOpen) {
+    if (y < 82) { gameMenuOpen = false; return; }
+    if (x >= 52 && x <= 414 && y >= 120 && y <= 215) startGame();
+    else if (x >= 52 && x <= 414 && y >= 226 && y <= 326) startBerryCatch();
+    return;
+  }
   if (gameOpen) {
     gameTap(x, y);
     return;
@@ -689,7 +726,7 @@ void onTap(int16_t x, int16_t y) {
       if (i == 0) {
         if (!pet.sleeping) feedMenuUntil = millis() + 6000;
       } else if (i == 1) {
-        startGame();
+        openGameMenu();
       } else if (i == 2) {
         pet.toggleLight();
       } else {
@@ -978,6 +1015,14 @@ void render() {
     renderGallery();
     return;
   }
+  if (gameMenuOpen) {
+    renderGameMenu();
+    return;
+  }
+  if (berryCatchOpen) {
+    renderBerryCatch();
+    return;
+  }
   if (gameOpen) {
     renderGame();
     return;
@@ -1116,8 +1161,126 @@ void render() {
 
 // ---------- minijuego: toques con la pokeball ----------
 
+void openGameMenu() {
+  if (pet.isEgg() || pet.sleeping || pet.ceremony) return;
+  gameMenuOpen = true;
+}
+
+void renderGameMenu() {
+  drawGameScene();
+  gfx->setTextColor(inkColor());
+  setSize(3);
+  setCur(centerX(T(S_GAMES_TITLE), 3), 46);
+  printT(T(S_GAMES_TITLE));
+
+  gfx->fillRoundRect(58, 120, 350, 94, 18, UI_WHITE);
+  gfx->drawRoundRect(58, 120, 350, 94, 18, inkColor());
+  drawMap(SPR_ICON_PLAY, 16, 80, 150, 3, false);
+  gfx->setTextColor(inkColor());
+  setSize(2);
+  setCur(145, 148);
+  printT(T(S_BALL_GAME));
+  setSize(1);
+  setCur(145, 178);
+  printT(T(S_HIT_FAST));
+
+  gfx->fillRoundRect(58, 226, 350, 100, 18, UI_WHITE);
+  gfx->drawRoundRect(58, 226, 350, 100, 18, inkColor());
+  gfx->fillRoundRect(82, 254, 70, 48, 8, C565(0x9a, 0x64, 0x3b));
+  gfx->drawRoundRect(82, 254, 70, 48, 8, inkColor());
+  gfx->fillRect(76, 250, 82, 6, C565(0x64, 0x3e, 0x2b));
+  gfx->fillCircle(98, 262, 7, C565(0xe8, 0x45, 0x56));
+  gfx->fillCircle(118, 262, 7, C565(0x42, 0x88, 0xe0));
+  gfx->fillCircle(138, 262, 7, C565(0x55, 0xb8, 0x63));
+  gfx->setTextColor(inkColor());
+  setSize(2);
+  setCur(170, 250);
+  printT(T(S_BERRY_CATCH));
+  setSize(1);
+  setCur(170, 282);
+  printT(T(S_DRAG_BASKET));
+
+  setSize(2);
+  gfx->setTextColor(UI_TRACK);
+  setCur(centerX(T(S_DETAIL_BACK), 2), 350);
+  printT(T(S_DETAIL_BACK));
+  gfx->flush();
+}
+
+void startBerryCatch() {
+  if (pet.isEgg() || pet.sleeping || pet.ceremony) return;
+  gameMenuOpen = false;
+  berryCatchOpen = true;
+  berryFinished = false;
+  berryCatchUntil = millis() + 20000;
+  berryResultUntil = 0;
+  lastBerryStep = millis();
+  nextBerrySpawn = millis() + 350;
+  berryBasketX = 233;
+  berryScore = berryMisses = berryFavorites = berryFoodGain = 0;
+  berryNewHi = false;
+  for (auto &b : fallingBerries) b.active = false;
+  sfxPlay(SFX_TAP);
+}
+
+void spawnBerry() {
+  for (auto &b : fallingBerries) {
+    if (b.active) continue;
+    b.x = 86 + random(294);
+    b.y = 126;
+    b.vy = 2.0f + random(13) / 10.0f + berryScore * 0.035f;
+    b.kind = random(4);  // 0-2 bayas; 3 podrida
+    b.active = true;
+    return;
+  }
+}
+
+void finishBerryCatch() {
+  if (berryFinished) return;
+  berryFinished = true;
+  berryNewHi = berryScore > 0 && berryScore > pet.berryHi;
+  if (berryScore > pet.berryHi) pet.berryHi = berryScore;
+  berryFoodGain = pet.berryCatchResult(berryScore, berryFavorites);
+  berryResultUntil = millis() + 4000;
+  sfxPlay(berryNewHi ? SFX_MEDAL : SFX_PLAY);
+}
+
+void stepBerryCatch() {
+  if (berryFinished) return;
+  uint32_t now = millis();
+  float k = lastBerryStep ? (now - lastBerryStep) / 85.0f : 1.0f;
+  if (k > 3.0f) k = 3.0f;
+  lastBerryStep = now;
+
+  if (now >= nextBerrySpawn) {
+    spawnBerry();
+    uint32_t delayMs = berryScore >= 12 ? 430 : (berryScore >= 6 ? 570 : 720);
+    nextBerrySpawn = now + delayMs;
+  }
+
+  for (auto &b : fallingBerries) {
+    if (!b.active) continue;
+    b.y += b.vy * k;
+    if (b.y < 344) continue;
+
+    bool caught = fabsf(b.x - berryBasketX) <= 54;
+    bool rotten = b.kind == 3;
+    if (caught && !rotten) {
+      berryScore++;
+      if (pet.lovesBerry(b.kind)) berryFavorites++;
+      sfxPlay(SFX_PLAY);
+    } else if ((caught && rotten) || (!caught && !rotten)) {
+      if (berryMisses < 3) berryMisses++;
+    }
+    b.active = false;
+  }
+
+  if (berryMisses >= 3 || !timeLeft(berryCatchUntil)) finishBerryCatch();
+}
+
 void startGame() {
   if (pet.isEgg() || pet.sleeping || pet.ceremony) return;
+  gameMenuOpen = false;
   gameOpen = true;
   gameOverUntil = 0;
   gameScore = 0;
@@ -1142,6 +1305,7 @@ void gameTap(int16_t x, int16_t y) {
   if (gameOverUntil) return;
   if (y < 72) {  // tocar la cabecera = abandonar sin premio
     gameOpen = false;
+    gameMenuOpen = true;
     return;
   }
   float dx = ballX - x, dy = ballY - y;
@@ -1337,6 +1501,7 @@ void renderGame() {
     drawGameScene();
     if (!timeLeft(gameOverUntil)) {
       gameOpen = false;
+      gameMenuOpen = true;
       return;
     }
     char buf[22];
@@ -1418,6 +1583,103 @@ void renderGame() {
   // la pokeball
   drawMap(SPR_ICON_PLAY, 16, (int)ballX - 24, (int)ballY - 24, 3, false);
 
+  gfx->flush();
+}
+
+
+void renderBerryCatch() {
+  bool night = sceneHour() < 6 || sceneHour() >= 20;
+  uint16_t ink = night ? UI_INK_NIGHT : UI_INK;
+  drawGameScene();
+
+  if (berryFinished) {
+    if (!timeLeft(berryResultUntil)) {
+      berryCatchOpen = false;
+      gameMenuOpen = true;
+      return;
+    }
+    char score[22];
+    snprintf(score, sizeof(score), T(S_SCORE_FMT), berryScore);
+    gfx->setTextColor(ink);
+    setSize(4);
+    setCur(centerX(score, 4), 142);
+    printT(score);
+
+    char rec[24];
+    snprintf(rec, sizeof(rec), T(S_REC_FMT), pet.berryHi);
+    setSize(2);
+    setCur(centerX(rec, 2), 198);
+    printT(rec);
+
+    char food[24];
+    snprintf(food, sizeof(food), T(S_FOOD_GAIN_FMT), berryFoodGain);
+    gfx->setTextColor(UI_BAR_OK);
+    setCur(centerX(food, 2), 238);
+    printT(food);
+    if (berryFavorites) {
+      gfx->setTextColor(UI_BAR_WARN);
+      setCur(centerX(T(S_LIKES), 2), 276);
+      printT(T(S_LIKES));
+    }
+    if (berryNewHi && berryScore) {
+      gfx->setTextColor(UI_BAR_WARN);
+      setCur(centerX(T(S_NEW_RECORD), 2), 314);
+      printT(T(S_NEW_RECORD));
+    }
+    gfx->flush();
+    return;
+  }
+
+  stepBerryCatch();
+  char score[8];
+  snprintf(score, sizeof(score), "%u", berryScore);
+  gfx->setTextColor(ink);
+  setSize(4);
+  setCur(centerX(score, 4), 24);
+  printT(score);
+
+  uint32_t remain = timeLeft(berryCatchUntil);
+  uint8_t seconds = (remain + 999) / 1000;
+  char timer[8];
+  snprintf(timer, sizeof(timer), "0:%02u", seconds);
+  setSize(2);
+  setCur(centerX(timer, 2), 70);
+  printT(timer);
+  for (int i = 0; i < 3; i++) {
+    if (i < 3 - berryMisses) gfx->fillCircle(190 + i * 26, 105, 6, UI_BAR_BAD);
+    else gfx->drawCircle(190 + i * 26, 105, 6, UI_TRACK);
+  }
+  setCur(centerX(T(S_DRAG_BASKET), 2), 126);
+  printT(T(S_DRAG_BASKET));
+
+  for (auto &b : fallingBerries) {
+    if (!b.active) continue;
+    uint16_t color = b.kind == 0 ? C565(0xe8, 0x45, 0x56)
+                    : b.kind == 1 ? C565(0x42, 0x88, 0xe0)
+                    : b.kind == 2 ? C565(0x55, 0xb8, 0x63)
+                                  : C565(0x62, 0x55, 0x4e);
+    int x = (int)b.x, y = (int)b.y;
+    gfx->fillCircle(x, y, 10, color);
+    gfx->fillCircle(x - 3, y - 3, 3, C565(0xff, 0xe8, 0xc7));
+    gfx->drawLine(x, y - 10, x + 2, y - 15, C565(0x45, 0x70, 0x3f));
+    if (b.kind == 3) {
+      gfx->drawLine(x - 4, y - 4, x + 4, y + 4, UI_WHITE);
+      gfx->drawLine(x + 4, y - 4, x - 4, y + 4, UI_WHITE);
+    }
+  }
+
+  // cesta
+  int bx = (int)berryBasketX;
+  gfx->fillRoundRect(bx - 48, 352, 96, 28, 7, C565(0x9a, 0x64, 0x3b));
+  gfx->drawRoundRect(bx - 48, 352, 96, 28, 7, ink);
+  gfx->fillRect(bx - 55, 348, 110, 6, C565(0x64, 0x3e, 0x2b));
+  gfx->drawLine(bx - 30, 359, bx - 20, 376, C565(0xd5, 0xa2, 0x68));
+  gfx->drawLine(bx, 359, bx, 377, C565(0xd5, 0xa2, 0x68));
+  gfx->drawLine(bx + 30, 359, bx + 20, 376, C565(0xd5, 0xa2, 0x68));
+
+  gfx->fillRoundRect(92, 397, 282, 12, 4, UI_TRACK);
+  int fw = (int)(282UL * remain / 20000UL);
+  if (fw > 0) gfx->fillRoundRect(92, 397, fw, 12, 4, UI_BAR_OK);
   gfx->flush();
 }
 
