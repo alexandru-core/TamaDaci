@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.30"
+#define FW_VERSION "1.31"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -1244,17 +1244,17 @@ float leafDirectionAngle(uint8_t dir) {
 void spawnLeaf() {
   for (auto &leaf : flyingLeaves) {
     if (leaf.active) continue;
-    // Wind points toward the direction leaves travel. Spawn on the opposite
-    // edge so each leaf enters from outside the display and moves inward.
-    float angle = leafDirectionAngle(leafWindDir) + PI +
-                  (random(401) - 200) * 0.001f;
+    // Spawn at the upwind edge and carry the leaf across the display.
+    // The basket catches it at the opposite (downwind) edge.
+    float windAngle = leafDirectionAngle(leafWindDir);
+    float angle = windAngle + PI + (random(401) - 200) * 0.001f;
     float radius = 225 + random(9);
     float speed = 1.8f + (leafScore / 10) * 0.20f;
     if (speed > 5.0f) speed = 5.0f;
     leaf.x = CX + cosf(angle) * radius;
     leaf.y = CY + sinf(angle) * radius;
-    leaf.vx = cosf(angle + PI) * speed;
-    leaf.vy = sinf(angle + PI) * speed;
+    leaf.vx = cosf(windAngle) * speed;
+    leaf.vy = sinf(windAngle) * speed;
     leaf.caught = false;
     leaf.caughtAt = 0;
     leaf.active = true;
@@ -1328,8 +1328,9 @@ void stepLeafCatcher() {
     leaf.y += leaf.vy * k;
     float dx = leaf.x - CX, dy = leaf.y - CY;
     float radius2 = dx * dx + dy * dy;
-    // Resolve the catch when the incoming leaf reaches the basket's rim.
-    if (beforeR2 >= 202.0f * 202.0f && radius2 < 202.0f * 202.0f) {
+    // Leaves cross the center and reach the rim on the opposite side.
+    // Only resolve the catch on that outbound crossing of the basket's rim.
+    if (beforeR2 < 202.0f * 202.0f && radius2 >= 202.0f * 202.0f) {
       float angle = atan2f(dy, dx);
       float diff = atan2f(sinf(angle - leafBasketAngle), cosf(angle - leafBasketAngle));
       if (fabsf(diff) <= 0.32f) {
@@ -1342,8 +1343,8 @@ void stepLeafCatcher() {
         leaf.active = false;
         sfxPlay(SFX_DENY);
       }
-    } else if (!leaf.caught && radius2 < 36.0f * 36.0f) {
-      // A missed leaf has crossed the playable area; remove it cleanly.
+    } else if (!leaf.caught && radius2 > 228.0f * 228.0f) {
+      // A missed leaf has left the display without reaching the basket.
       leaf.active = false;
     }
   }
