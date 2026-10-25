@@ -1166,6 +1166,8 @@ void openGameMenu() {
   gameMenuOpen = true;
 }
 
+void drawGameScene();
+
 void renderGameMenu() {
   drawGameScene();
   gfx->setTextColor(inkColor());
