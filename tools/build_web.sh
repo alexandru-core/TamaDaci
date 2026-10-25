@@ -17,7 +17,7 @@ arduino-cli compile --fqbn "$FQBN" --export-binaries .
 
 B=build/esp32.esp32.esp32s3
 echo "Fusionando binarios..."
-esptool.py --chip esp32s3 merge-bin -o web/firmware/tamapoke.bin \
+esptool.py --chip esp32s3 merge_bin -o web/firmware/tamapoke.bin \
   0x0     "$B/$SKETCH.bootloader.bin" \
   0x8000  "$B/$SKETCH.partitions.bin" \
   0xe000  "$B/boot_app0.bin" \
