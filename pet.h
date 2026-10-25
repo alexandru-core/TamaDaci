@@ -77,6 +77,7 @@ public:
   uint16_t newMedal = 0;   // recien conseguida(s), para celebrar
   uint16_t lastMilestone = 0;  // hito de racha ya celebrado
   uint16_t gameHi = 0;     // record del minijuego (del jugador)
+  uint16_t berryHi = 0;    // record de Berry Catch
   uint16_t strHi = 0;      // record de golpes al saco
 
   void begin();                 // carga estado de NVS (o crea el primer huevo)
@@ -90,6 +91,7 @@ public:
     return !isEgg() && (speciesId % 3) == color;  // gusto oculto por especie
   }
   void playResult(uint8_t score);  // recompensa del minijuego (entrena VEL)
+  uint8_t berryCatchResult(uint8_t score, uint8_t favoriteCaught);
   uint8_t trainStrength(uint16_t hits);  // saco de entrenamiento (entrena FUE)
 
   // stats de combate: base real de gen 1 x genes + nivel + entrenamiento
