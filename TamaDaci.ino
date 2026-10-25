@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.23"
+#define FW_VERSION "1.24"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -1226,12 +1226,14 @@ float berryCatchProgress(uint32_t now) {
   return progress > 1.0f ? 1.0f : progress;
 }
 
-void spawnBerry(float progress) {
+void spawnBerry() {
   for (auto &b : fallingBerries) {
     if (b.active) continue;
     b.x = 86 + random(294);
     b.y = 126;
-    b.vy = 2.0f + random(9) / 10.0f + progress * 1.0f;
+    uint8_t speedLevel = berryScore / 5;  // faster after each 5 berries caught
+    if (speedLevel > 8) speedLevel = 8;
+    b.vy = 2.4f + random(9) / 10.0f + speedLevel * 0.35f;
     b.kind = random(3);  // solo bayas buenas
     b.active = true;
     return;
@@ -1261,7 +1263,7 @@ void stepBerryCatch() {
     if (b.active) activeBerries++;
   uint8_t maxActiveBerries = progress >= 0.5f ? 4 : 3;
   if (now >= nextBerrySpawn) {
-    if (activeBerries < maxActiveBerries) spawnBerry(progress);
+    if (activeBerries < maxActiveBerries) spawnBerry();
     uint32_t delayMs = 3800 - (uint32_t)(progress * 1000.0f);
     nextBerrySpawn = now + delayMs;
   }
