@@ -485,7 +485,7 @@ void Pet::playResult(uint8_t score) {
 
 uint8_t Pet::berryCatchResult(uint8_t score, uint8_t favoriteCaught) {
   if (ceremony != CER_NONE || isEgg() || sleeping) return 0;
-  uint8_t food = score * 2;
+  uint16_t food = (uint16_t)score * 2;
   if (food > 20) food = 20;
   uint8_t favoriteFood = favoriteCaught ? 5 : 0;
   uint8_t before = fullness;
