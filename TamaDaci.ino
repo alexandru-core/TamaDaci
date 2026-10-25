@@ -95,7 +95,7 @@ bool gameNewHi = false;
 struct FallingBerry { float x, y, vy; uint8_t kind; bool active; };
 FallingBerry fallingBerries[8];
 bool berryCatchOpen = false, berryExitTouch = false, berryFinished = false;
-uint32_t berryCatchUntil = 0, berryResultUntil = 0, lastBerryStep = 0, nextBerrySpawn = 0;
+uint32_t berryCatchUntil = 0, berryResultUntil = 0, berryCatchStarted = 0, lastBerryStep = 0, nextBerrySpawn = 0;
 float berryBasketX = 233;
 uint8_t berryScore = 0, berryMisses = 0, berryFavorites = 0, berryFoodGain = 0;
 bool berryNewHi = false;
@@ -1210,10 +1210,11 @@ void startBerryCatch() {
   gameMenuOpen = false;
   berryCatchOpen = true;
   berryFinished = false;
-  berryCatchUntil = millis() + 20000;
+  berryCatchStarted = millis();
+  berryCatchUntil = berryCatchStarted + 20000;
   berryResultUntil = 0;
-  lastBerryStep = millis();
-  nextBerrySpawn = millis() + 350;
+  lastBerryStep = berryCatchStarted;
+  nextBerrySpawn = berryCatchStarted + 900;
   berryBasketX = 233;
   berryScore = berryMisses = berryFavorites = berryFoodGain = 0;
   berryNewHi = false;
@@ -1226,7 +1227,9 @@ void spawnBerry() {
     if (b.active) continue;
     b.x = 86 + random(294);
     b.y = 126;
-    b.vy = 3.5f + random(16) / 10.0f + berryScore * 0.035f;
+    float progress = (millis() - berryCatchStarted) / 20000.0f;
+    if (progress > 1.0f) progress = 1.0f;
+    b.vy = 2.3f + random(10) / 10.0f + progress * 0.9f;
     b.kind = random(4);  // 0-2 bayas; 3 podrida
     b.active = true;
     return;
@@ -1252,7 +1255,9 @@ void stepBerryCatch() {
 
   if (now >= nextBerrySpawn) {
     spawnBerry();
-    uint32_t delayMs = berryScore >= 12 ? 430 : (berryScore >= 6 ? 570 : 720);
+    float progress = (now - berryCatchStarted) / 20000.0f;
+    if (progress > 1.0f) progress = 1.0f;
+    uint32_t delayMs = 1100 - (uint32_t)(progress * 350.0f);
     nextBerrySpawn = now + delayMs;
   }
 
