@@ -116,6 +116,10 @@ bool game2048Open = false, game2048ExitTouch = false, game2048Won = false;
 uint32_t game2048Board[16] = {0};
 uint32_t game2048Score = 0, game2048OverUntil = 0;
 int16_t game2048TouchX = 0, game2048TouchY = 0;
+int16_t game2048TouchLastX = 0, game2048TouchLastY = 0;
+void start2048();
+bool move2048(int dx, int dy);
+void render2048();
 
 // saco de entrenamiento (entrena la fuerza)
 bool sackOpen = false;
@@ -529,10 +533,12 @@ void handleTouch() {
       lastInteract = millis();
       screenOff = false;
       if (!wasPressed) {
-        game2048TouchX = x;
-        game2048TouchY = y;
-        game2048ExitTouch = y >= 420 && abs(x - CX) <= 42;
+        game2048TouchX = game2048TouchLastX = x;
+        game2048TouchY = game2048TouchLastY = y;
+        game2048ExitTouch = y >= 407 && y <= 445 && abs(x - CX) <= 48;
       }
+      game2048TouchLastX = x;
+      game2048TouchLastY = y;
     } else if (wasPressed) {
       if (game2048ExitTouch || game2048OverUntil) {
         game2048Open = false;
@@ -540,7 +546,8 @@ void handleTouch() {
         game2048OverUntil = 0;
         gameMenuOpen = true;
       } else {
-        int dx = x - game2048TouchX, dy = y - game2048TouchY;
+        int dx = game2048TouchLastX - game2048TouchX;
+        int dy = game2048TouchLastY - game2048TouchY;
         if (abs(dx) >= 36 || abs(dy) >= 36) {
           if (abs(dx) > abs(dy)) move2048(dx > 0 ? 1 : -1, 0);
           else move2048(0, dy > 0 ? 1 : -1);
@@ -1256,6 +1263,179 @@ void openGameMenu() {
 }
 
 void drawGameScene();
+
+void spawn2048Tile() {
+  uint8_t empty[16], count = 0;
+  for (uint8_t i = 0; i < 16; i++)
+    if (!game2048Board[i]) empty[count++] = i;
+  if (!count) return;
+  uint8_t at = empty[random(count)];
+  game2048Board[at] = random(10) == 0 ? 4 : 2;
+}
+
+void start2048() {
+  if (pet.isEgg() || pet.sleeping || pet.ceremony) return;
+  gameMenuOpen = false;
+  game2048Open = true;
+  game2048ExitTouch = game2048Won = false;
+  game2048Score = 0;
+  game2048OverUntil = 0;
+  for (uint8_t i = 0; i < 16; i++) game2048Board[i] = 0;
+  spawn2048Tile();
+  spawn2048Tile();
+  sfxPlay(SFX_TAP);
+}
+
+bool has2048Move() {
+  for (uint8_t y = 0; y < 4; y++) {
+    for (uint8_t x = 0; x < 4; x++) {
+      uint32_t v = game2048Board[y * 4 + x];
+      if (!v) return true;
+      if (x < 3 && v == game2048Board[y * 4 + x + 1]) return true;
+      if (y < 3 && v == game2048Board[(y + 1) * 4 + x]) return true;
+    }
+  }
+  return false;
+}
+
+bool move2048(int dx, int dy) {
+  if (game2048OverUntil) return false;
+  uint32_t before[16];
+  for (uint8_t i = 0; i < 16; i++) before[i] = game2048Board[i];
+
+  for (uint8_t line = 0; line < 4; line++) {
+    uint32_t values[4];
+    uint8_t count = 0;
+    for (uint8_t step = 0; step < 4; step++) {
+      int x = dx ? (dx > 0 ? 3 - step : step) : line;
+      int y = dy ? (dy > 0 ? 3 - step : step) : line;
+      uint32_t v = game2048Board[y * 4 + x];
+      if (v) values[count++] = v;
+    }
+
+    uint32_t merged[4] = {0, 0, 0, 0};
+    uint8_t out = 0;
+    for (uint8_t i = 0; i < count; i++) {
+      if (i + 1 < count && values[i] == values[i + 1]) {
+        merged[out] = values[i] * 2;
+        game2048Score += merged[out];
+        if (merged[out] >= 2048) game2048Won = true;
+        i++;
+      } else {
+        merged[out] = values[i];
+      }
+      out++;
+    }
+
+    for (uint8_t step = 0; step < 4; step++) {
+      int x = dx ? (dx > 0 ? 3 - step : step) : line;
+      int y = dy ? (dy > 0 ? 3 - step : step) : line;
+      game2048Board[y * 4 + x] = step < out ? merged[step] : 0;
+    }
+  }
+
+  bool changed = false;
+  for (uint8_t i = 0; i < 16; i++)
+    if (before[i] != game2048Board[i]) { changed = true; break; }
+  if (!changed) return false;
+
+  spawn2048Tile();
+  sfxPlay(SFX_TAP);
+  if (!has2048Move()) {
+    game2048OverUntil = millis() + 5000;
+    pet.playResult(0);  // reward play without changing the shared minigame record
+    sfxPlay(SFX_LEVEL);
+  }
+  return true;
+}
+
+uint16_t color2048(uint32_t value) {
+  switch (value) {
+    case 2: return C565(0xed, 0xe4, 0xda);
+    case 4: return C565(0xf2, 0xb1, 0x79);
+    case 8: return C565(0xf5, 0x95, 0x63);
+    case 16: return C565(0xf6, 0x75, 0x4b);
+    case 32: return C565(0xf6, 0x55, 0x3a);
+    case 64: return C565(0xf5, 0x3b, 0x2c);
+    case 128: return C565(0xed, 0xcf, 0x72);
+    case 256: return C565(0xed, 0xcc, 0x61);
+    case 512: return C565(0xed, 0xc8, 0x50);
+    case 1024: return C565(0xed, 0xc5, 0x3f);
+    default: return C565(0xed, 0xc2, 0x2e);
+  }
+}
+
+void draw2048Board() {
+  const int x0 = 71, y0 = 71, cell = 78, gap = 4;
+  gfx->fillRoundRect(x0 - 6, y0 - 6, 336, 336, 12, C565(0xbb, 0xad, 0xa0));
+  for (uint8_t y = 0; y < 4; y++) {
+    for (uint8_t x = 0; x < 4; x++) {
+      int px = x0 + x * (cell + gap), py = y0 + y * (cell + gap);
+      uint32_t value = game2048Board[y * 4 + x];
+      gfx->fillRoundRect(px, py, cell, cell, 7,
+                         value ? color2048(value) : C565(0xcd, 0xc1, 0xb1));
+      if (value) {
+        char label[12];
+        snprintf(label, sizeof(label), "%lu", (unsigned long)value);
+        uint8_t size = value >= 1024 ? 2 : 3;
+        setSize(size);
+        gfx->setTextColor(value <= 4 ? C565(0x78, 0x6e, 0x65) : UI_WHITE);
+        setCur(px + (cell - textW(label, size)) / 2, py + 27);
+        printT(label);
+      }
+    }
+  }
+}
+
+void render2048() {
+  bool night = sceneHour() < 6 || sceneHour() >= 20;
+  uint16_t ink = night ? UI_INK_NIGHT : UI_INK;
+  drawGameScene();
+
+  if (game2048OverUntil && !timeLeft(game2048OverUntil)) {
+    game2048Open = false;
+    gameMenuOpen = true;
+    return;
+  }
+
+  gfx->setTextColor(ink);
+  setSize(3);
+  setCur(centerX("2048", 3), 8);
+  printT("2048");
+  char score[24];
+  snprintf(score, sizeof(score), "Score %lu", (unsigned long)game2048Score);
+  setSize(2);
+  setCur(centerX(score, 2), 43);
+  printT(score);
+  if (game2048Won) {
+    gfx->setTextColor(UI_BAR_WARN);
+    setCur(centerX("2048 reached!", 2), 62);
+    printT("2048 reached!");
+  }
+
+  draw2048Board();
+  if (game2048OverUntil) {
+    gfx->fillRoundRect(91, 180, 284, 94, 16, UI_WHITE);
+    gfx->drawRoundRect(91, 180, 284, 94, 16, ink);
+    gfx->setTextColor(ink);
+    setSize(3);
+    setCur(centerX("GAME OVER", 3), 194);
+    printT("GAME OVER");
+    setSize(2);
+    char finalScore[24];
+    snprintf(finalScore, sizeof(finalScore), "Score %lu", (unsigned long)game2048Score);
+    setCur(centerX(finalScore, 2), 238);
+    printT(finalScore);
+  } else {
+    gfx->fillRoundRect(CX - 31, 408, 62, 30, 9, UI_WHITE);
+    gfx->drawRoundRect(CX - 31, 408, 62, 30, 9, ink);
+    setSize(2);
+    gfx->setTextColor(ink);
+    setCur(CX - textW("X", 2) / 2, 414);
+    printT("X");
+  }
+  gfx->flush();
+}
 
 void startLeafCatcher() {
   if (pet.isEgg() || pet.sleeping || pet.ceremony) return;
