@@ -523,6 +523,35 @@ void handleTouch() {
   int16_t x, y;
   bool pressed = touch.getPoint(&x, &y, 1) > 0;
 
+  // 2048 captures one swipe at a time; the button at the bottom exits.
+  if (game2048Open || game2048ExitTouch) {
+    if (pressed) {
+      lastInteract = millis();
+      screenOff = false;
+      if (!wasPressed) {
+        game2048TouchX = x;
+        game2048TouchY = y;
+        game2048ExitTouch = y >= 420 && abs(x - CX) <= 42;
+      }
+    } else if (wasPressed) {
+      if (game2048ExitTouch || game2048OverUntil) {
+        game2048Open = false;
+        game2048ExitTouch = false;
+        game2048OverUntil = 0;
+        gameMenuOpen = true;
+      } else {
+        int dx = x - game2048TouchX, dy = y - game2048TouchY;
+        if (abs(dx) >= 36 || abs(dy) >= 36) {
+          if (abs(dx) > abs(dy)) move2048(dx > 0 ? 1 : -1, 0);
+          else move2048(0, dy > 0 ? 1 : -1);
+        }
+      }
+    }
+    if (!pressed && !wasPressed) game2048ExitTouch = false;
+    wasPressed = pressed;
+    return;
+  }
+
   // Leaf Catcher captures a continuous drag to rotate the basket around the rim.
   if (leafCatcherOpen || leafExitTouch) {
     if (pressed) {
@@ -1519,17 +1548,28 @@ void renderGameMenu() {
       gfx->fillRoundRect(cx - 15, y + 7, 30, 27, 7, C565(0xa4, 0x6a, 0x42));
       gfx->drawRoundRect(cx - 15, y + 7, 30, 27, 7, inkColor());
       gfx->fillRoundRect(cx - 8, y + 3, 16, 7, 3, C565(0x6b, 0x43, 0x2d));
-    } else {
+    } else if (i == 3) {
       gfx->fillEllipse(cx, y + 20, 8, 13, C565(0x63, 0xa7, 0x4f));
       gfx->drawLine(cx - 6, y + 28, cx + 7, y + 12, C565(0x3b, 0x68, 0x35));
       gfx->fillEllipse(cx + 11, y + 18, 6, 10, C565(0x8b, 0xc7, 0x64));
       gfx->drawLine(cx + 8, y + 25, cx + 15, y + 12, C565(0x3b, 0x68, 0x35));
+    } else {
+      gfx->fillRoundRect(cx - 20, y + 5, 23, 23, 4, C565(0xed, 0xe4, 0xda));
+      gfx->fillRoundRect(cx + 3, y + 5, 23, 23, 4, C565(0xf2, 0xb1, 0x79));
+      gfx->setTextColor(C565(0x78, 0x6e, 0x65));
+      setSize(1);
+      setCur(cx - 16, y + 11);
+      printT("2");
+      gfx->setTextColor(UI_WHITE);
+      setCur(cx + 7, y + 11);
+      printT("4");
     }
 
     const char *label = i == 0 ? T(S_BALL_GAME)
                         : i == 1 ? T(S_BERRY_CATCH)
                         : i == 2 ? T(S_TRAIN_STR)
-                                 : "Leaf Catcher";
+                        : i == 3 ? "Leaf Catcher"
+                                 : "2048";
     gfx->setTextColor(inkColor());
     setSize(1);
     setCur(centerX(label, 1), y + 47);
