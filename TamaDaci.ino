@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.35"
+#define FW_VERSION "1.36"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -120,7 +120,7 @@ bool breakoutOpen = false, breakoutExitTouch = false, breakoutOver = false;
 uint32_t breakoutOverUntil = 0, lastBreakoutStep = 0;
 uint16_t breakoutScore = 0;
 uint8_t breakoutLives = 3, breakoutLevel = 1;
-float breakoutPaddleAngle = 1.5707963f, breakoutSpeed = 4.6f;
+float breakoutPaddleAngle = 1.5707963f, breakoutSpeed = 5.5f;
 int16_t breakoutTouchX = 0, breakoutTouchY = 0;
 int16_t breakoutTouchLastX = 0, breakoutTouchLastY = 0;
 void startBreakout();
@@ -1373,7 +1373,7 @@ void startBreakout() {
   breakoutScore = 0;
   breakoutLives = 3;
   breakoutLevel = 1;
-  breakoutSpeed = 4.6f;
+  breakoutSpeed = 5.5f;
   breakoutPaddleAngle = 1.5707963f;
   buildBreakoutLevel();
   resetBreakoutReadyBall();
