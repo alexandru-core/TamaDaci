@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.34"
+#define FW_VERSION "1.35"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -110,6 +110,22 @@ uint32_t nextWindChange = 0, leafWarningStarted = 0, leafResultUntil = 0;
 float leafBasketAngle = -1.5707963f;
 uint16_t leafScore = 0;
 uint8_t leafMisses = 0, leafWindDir = 0, leafNextWindDir = 0, leafWarningBeep = 0;
+
+// Breakout: bricks sit in the upper field; paddle follows the lower semicircle.
+struct BreakBrick { uint8_t hp; bool extraBall; };
+struct BreakBall { float x, y, vx, vy; bool active, ready; };
+BreakBrick breakoutBricks[5][6];
+BreakBall breakoutBalls[6];
+bool breakoutOpen = false, breakoutExitTouch = false, breakoutOver = false;
+uint32_t breakoutOverUntil = 0, lastBreakoutStep = 0;
+uint16_t breakoutScore = 0;
+uint8_t breakoutLives = 3, breakoutLevel = 1;
+float breakoutPaddleAngle = 1.5707963f, breakoutSpeed = 4.6f;
+int16_t breakoutTouchX = 0, breakoutTouchY = 0;
+int16_t breakoutTouchLastX = 0, breakoutTouchLastY = 0;
+void startBreakout();
+void stepBreakout();
+void renderBreakout();
 
 // 2048 touch puzzle.
 bool game2048Open = false, game2048ExitTouch = false, game2048Won = false;
@@ -362,7 +378,7 @@ void loop() {
   // volcado). Es la mayor carga evitable de la placa. Cada render repinta la
   // escena entera, asi que no queda nada a medias; y al quedarse lastRender
   // congelado, el primer frame tras despertar sale en el acto.
-  if (!screenOff && now - lastRender >= (uint32_t)((gameOpen || berryCatchOpen || leafCatcherOpen || game2048Open || gameMenuOpen || sackOpen) ? 85 : 100)) {
+  if (!screenOff && now - lastRender >= (uint32_t)((gameOpen || berryCatchOpen || leafCatcherOpen || game2048Open || breakoutOpen || gameMenuOpen || sackOpen) ? 85 : 100)) {
     lastRender = now;
     render();
   }
@@ -527,6 +543,34 @@ void handleTouch() {
   int16_t x, y;
   bool pressed = touch.getPoint(&x, &y, 1) > 0;
 
+  // Breakout drag controls the paddle; a tap launches a waiting ball.
+  if (breakoutOpen || breakoutExitTouch) {
+    if (pressed) {
+      lastInteract = millis();
+      screenOff = false;
+      if (!wasPressed) {
+        breakoutTouchX = breakoutTouchLastX = x;
+        breakoutTouchY = breakoutTouchLastY = y;
+        breakoutExitTouch = y < 52 && abs(x - CX) < 42;
+      }
+      breakoutTouchLastX = x;
+      breakoutTouchLastY = y;
+      if (!breakoutExitTouch) setBreakoutPaddleFromX(x);
+    } else if (wasPressed) {
+      if (breakoutExitTouch) {
+        breakoutOpen = false;
+        breakoutExitTouch = false;
+        gameMenuOpen = true;
+      } else {
+        int dx = breakoutTouchLastX - breakoutTouchX;
+        int dy = breakoutTouchLastY - breakoutTouchY;
+        if (abs(dx) < 18 && abs(dy) < 36) launchBreakoutReadyBalls();
+      }
+    }
+    wasPressed = pressed;
+    return;
+  }
+
   // 2048 captures one swipe at a time; the button at the bottom exits.
   if (game2048Open || game2048ExitTouch) {
     if (pressed) {
@@ -648,7 +692,7 @@ void openClock();  // prototipo
 
 void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
-  if (gameMenuOpen || gameOpen || berryCatchOpen || game2048Open || galleryOpen || kbOpen || sackOpen || pet.ceremony) return;
+  if (gameMenuOpen || gameOpen || berryCatchOpen || game2048Open || breakoutOpen || galleryOpen || kbOpen || sackOpen || pet.ceremony) return;
   if (clockOpen) { clockOpen = false; return; }
   if (cardOpen) {
     if (dir < 0) cardOpen = false;  // arriba cierra la ficha
@@ -665,7 +709,7 @@ void onSwipeV(int dir) {
 // deslizar: dir +1 = hacia la derecha
 void onSwipe(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
-  if (gameMenuOpen || gameOpen || berryCatchOpen || game2048Open || kbOpen || clockOpen) return;
+  if (gameMenuOpen || gameOpen || berryCatchOpen || game2048Open || breakoutOpen || kbOpen || clockOpen) return;
   if (cardOpen) {  // dentro de la ficha: cambiar entre las 4 paginas
     int p = (int)cardPage + (dir > 0 ? -1 : 1);  // izquierda avanza
     cardPage = p < 0 ? 0 : (p > 3 ? 3 : p);
@@ -752,6 +796,7 @@ void onTap(int16_t x, int16_t y) {
       else if (index == 2) { gameMenuOpen = false; startSack(); }
       else if (index == 3) startLeafCatcher();
       else if (index == 4) start2048();
+      else if (index == 5) startBreakout();
     }
     return;
   }
@@ -1105,6 +1150,10 @@ void render() {
   }
   if (gameMenuOpen) {
     renderGameMenu();
+    return;
+  }
+  if (breakoutOpen) {
+    renderBreakout();
     return;
   }
   if (game2048Open) {
@@ -1702,7 +1751,7 @@ void renderGameMenu() {
     int col = i % 3, row = i / 3;
     int x = gridX + col * (cellW + colGap);
     int y = gridY + row * (cellH + rowGap);
-    bool available = i < 5;
+    bool available = i < 6;
     gfx->fillRoundRect(x, y, cellW, cellH, 12, UI_WHITE);
     gfx->drawRoundRect(x, y, cellW, cellH, 12, available ? inkColor() : UI_TRACK);
 
