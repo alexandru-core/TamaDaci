@@ -553,7 +553,7 @@ void handleTouch() {
       if (!wasPressed) {
         breakoutTouchX = breakoutTouchLastX = x;
         breakoutTouchY = breakoutTouchLastY = y;
-        breakoutExitTouch = y < 36 && abs(x - CX) < 38;
+        breakoutExitTouch = y < 36 && abs(x - 150) < 38;
       }
       breakoutTouchLastX = x;
       breakoutTouchLastY = y;
@@ -1538,7 +1538,7 @@ void renderBreakout() {
   if (!breakoutOver) stepBreakout();
   gfx->setTextColor(ink);
   setSize(2);
-  setCur(26, 10);
+  setCur(150, 10);
   printT("X");
   setCur(centerX("BREAKOUT", 2), 10);
   printT("BREAKOUT");
