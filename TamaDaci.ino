@@ -126,6 +126,8 @@ int16_t breakoutTouchLastX = 0, breakoutTouchLastY = 0;
 void startBreakout();
 void stepBreakout();
 void renderBreakout();
+void setBreakoutPaddleFromX(int16_t x);
+void launchBreakoutReadyBalls();
 
 // 2048 touch puzzle.
 bool game2048Open = false, game2048ExitTouch = false, game2048Won = false;
@@ -551,13 +553,13 @@ void handleTouch() {
       if (!wasPressed) {
         breakoutTouchX = breakoutTouchLastX = x;
         breakoutTouchY = breakoutTouchLastY = y;
-        breakoutExitTouch = y < 52 && abs(x - CX) < 42;
+        breakoutExitTouch = y < 36 && abs(x - CX) < 38;
       }
       breakoutTouchLastX = x;
       breakoutTouchLastY = y;
       if (!breakoutExitTouch) setBreakoutPaddleFromX(x);
     } else if (wasPressed) {
-      if (breakoutExitTouch) {
+      if (breakoutExitTouch || breakoutOver) {
         breakoutOpen = false;
         breakoutExitTouch = false;
         gameMenuOpen = true;
@@ -1782,7 +1784,7 @@ void renderGameMenu() {
       gfx->drawLine(cx - 6, y + 28, cx + 7, y + 12, C565(0x3b, 0x68, 0x35));
       gfx->fillEllipse(cx + 11, y + 18, 6, 10, C565(0x8b, 0xc7, 0x64));
       gfx->drawLine(cx + 8, y + 25, cx + 15, y + 12, C565(0x3b, 0x68, 0x35));
-    } else {
+    } else if (i == 4) {
       gfx->fillRoundRect(cx - 20, y + 5, 23, 23, 4, C565(0xed, 0xe4, 0xda));
       gfx->fillRoundRect(cx + 3, y + 5, 23, 23, 4, C565(0xf2, 0xb1, 0x79));
       gfx->setTextColor(C565(0x78, 0x6e, 0x65));
@@ -1792,13 +1794,18 @@ void renderGameMenu() {
       gfx->setTextColor(UI_WHITE);
       setCur(cx + 7, y + 11);
       printT("4");
+    } else {
+      gfx->drawCircle(cx, y + 20, 15, C565(0x63, 0xa7, 0x4f));
+      gfx->drawLine(cx - 11, y + 26, cx + 11, y + 26, C565(0xf2, 0xb1, 0x79));
+      gfx->fillCircle(cx, y + 9, 4, C565(0xf5, 0x95, 0x63));
     }
 
     const char *label = i == 0 ? T(S_BALL_GAME)
                         : i == 1 ? T(S_BERRY_CATCH)
                         : i == 2 ? T(S_TRAIN_STR)
                         : i == 3 ? "Leaf Catcher"
-                                 : "2048";
+                        : i == 4 ? "2048"
+                                 : "Breakout";
     gfx->setTextColor(inkColor());
     setSize(1);
     setCur(centerX(label, 1), y + 47);
