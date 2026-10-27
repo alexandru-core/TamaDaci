@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.32"
+#define FW_VERSION "1.33"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -1249,8 +1249,8 @@ void spawnLeaf() {
     float windAngle = leafDirectionAngle(leafWindDir);
     float angle = windAngle + PI + (random(401) - 200) * 0.001f;
     float radius = 225 + random(9);
-    float speed = 2.8f + (leafScore / 10) * 0.30f;
-    if (speed > 6.5f) speed = 6.5f;
+    float speed = 5.6f + (leafScore / 10) * 0.60f;
+    if (speed > 13.0f) speed = 13.0f;
     leaf.x = CX + cosf(angle) * radius;
     leaf.y = CY + sinf(angle) * radius;
     leaf.vx = cosf(windAngle) * speed;
@@ -1352,20 +1352,20 @@ void stepLeafCatcher() {
 }
 
 void drawLeafArrow(float angle, uint16_t color, int cx, int cy) {
-  int x1 = cx - (int)(cosf(angle) * 11), y1 = cy - (int)(sinf(angle) * 11);
-  int x2 = cx + (int)(cosf(angle) * 11), y2 = cy + (int)(sinf(angle) * 11);
+  int x1 = cx - (int)(cosf(angle) * 33), y1 = cy - (int)(sinf(angle) * 33);
+  int x2 = cx + (int)(cosf(angle) * 33), y2 = cy + (int)(sinf(angle) * 33);
   gfx->drawLine(x1, y1, x2, y2, color);
   float backX = -cosf(angle), backY = -sinf(angle);
   for (int side = -1; side <= 1; side += 2) {
     float sideX = -sinf(angle) * side, sideY = cosf(angle) * side;
     gfx->drawLine(x2, y2,
-                  x2 + (int)(backX * 7 + sideX * 5),
+                  x2 + (int)(backX * 21 + sideX * 15),
                   y2 + (int)(backY * 7 + sideY * 5), color);
   }
 }
 
 void drawLeafArrows(float angle, uint16_t color) {
-  float px = -sinf(angle) * 17.0f, py = cosf(angle) * 17.0f;
+  float px = -sinf(angle) * 42.0f, py = cosf(angle) * 42.0f;
   for (int i = -1; i <= 1; i++)
     drawLeafArrow(angle, color, CX + (int)(px * i), CY + (int)(py * i));
 }
