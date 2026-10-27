@@ -1509,6 +1509,7 @@ void stepBreakout() {
             sfxPlay(SFX_TAP);
           } else {
             loseBreakoutBall(ball);
+            break;  // a new serve is waiting for the next touch
           }
         } else {
           float dot = ball.vx * nx + ball.vy * ny;
