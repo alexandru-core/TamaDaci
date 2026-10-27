@@ -1315,6 +1315,312 @@ void openGameMenu() {
 
 void drawGameScene();
 
+void buildBreakoutLevel() {
+  for (uint8_t r = 0; r < 5; r++) {
+    for (uint8_t c = 0; c < 6; c++) {
+      uint8_t roll = random(100);
+      breakoutBricks[r][c].hp = roll < 14 ? 3 : roll < 46 ? 2 : 1;
+      breakoutBricks[r][c].extraBall = false;
+    }
+  }
+  uint8_t bonus = random(30);
+  breakoutBricks[bonus / 6][bonus % 6].extraBall = true;
+}
+
+void setBreakoutPaddleFromX(int16_t x) {
+  float v = (x - CX) / 205.0f;
+  if (v < -0.94f) v = -0.94f;
+  if (v > 0.94f) v = 0.94f;
+  breakoutPaddleAngle = acosf(v);
+  if (breakoutPaddleAngle < 0.35f) breakoutPaddleAngle = 0.35f;
+  if (breakoutPaddleAngle > PI - 0.35f) breakoutPaddleAngle = PI - 0.35f;
+  for (auto &ball : breakoutBalls) {
+    if (!ball.active || !ball.ready) continue;
+    ball.x = CX + cosf(breakoutPaddleAngle) * 188.0f;
+    ball.y = CY + sinf(breakoutPaddleAngle) * 188.0f;
+  }
+}
+
+void resetBreakoutReadyBall() {
+  for (auto &ball : breakoutBalls) ball = {0, 0, 0, 0, false, false};
+  breakoutBalls[0].active = true;
+  breakoutBalls[0].ready = true;
+  setBreakoutPaddleFromX(CX + (int)(cosf(breakoutPaddleAngle) * 205.0f));
+}
+
+void launchBreakoutReadyBalls() {
+  bool launched = false;
+  float speed = breakoutSpeed;
+  float nx = cosf(breakoutPaddleAngle), ny = sinf(breakoutPaddleAngle);
+  float tx = -ny, ty = nx;
+  float kick = (random(201) - 100) * 0.003f;
+  for (auto &ball : breakoutBalls) {
+    if (!ball.active || !ball.ready) continue;
+    ball.ready = false;
+    ball.vx = (-nx + tx * kick) * speed;
+    ball.vy = (-ny + ty * kick) * speed;
+    launched = true;
+  }
+  if (launched) sfxPlay(SFX_PLAY);
+}
+
+void startBreakout() {
+  if (pet.isEgg() || pet.sleeping || pet.ceremony) return;
+  gameMenuOpen = false;
+  breakoutOpen = true;
+  breakoutExitTouch = breakoutOver = false;
+  breakoutOverUntil = 0;
+  breakoutScore = 0;
+  breakoutLives = 3;
+  breakoutLevel = 1;
+  breakoutSpeed = 4.6f;
+  breakoutPaddleAngle = 1.5707963f;
+  buildBreakoutLevel();
+  resetBreakoutReadyBall();
+  lastBreakoutStep = millis();
+  sfxPlay(SFX_TAP);
+}
+
+void addBreakoutBonusBall(const BreakBall &source) {
+  for (auto &ball : breakoutBalls) {
+    if (ball.active) continue;
+    float angle = atan2f(source.vy, source.vx) + (random(2) ? 0.58f : -0.58f);
+    ball.x = source.x;
+    ball.y = source.y;
+    ball.vx = cosf(angle) * breakoutSpeed;
+    ball.vy = sinf(angle) * breakoutSpeed;
+    ball.ready = false;
+    ball.active = true;
+    sfxPlay(SFX_LEVEL);
+    return;
+  }
+}
+
+void finishBreakout() {
+  if (breakoutOver) return;
+  breakoutOver = true;
+  breakoutOverUntil = millis() + 5000;
+  uint16_t reward = breakoutScore / 10;
+  pet.playResult(reward > 255 ? 255 : (uint8_t)reward);
+  sfxPlay(SFX_LEVEL);
+}
+
+void loseBreakoutBall(BreakBall &ball) {
+  ball.active = false;
+  for (const auto &other : breakoutBalls)
+    if (other.active) return;  // multiball continues while any ball remains
+  if (breakoutLives) breakoutLives--;
+  if (!breakoutLives) {
+    finishBreakout();
+    return;
+  }
+  resetBreakoutReadyBall();  // next serve waits for a touch
+  sfxPlay(SFX_DENY);
+}
+
+void advanceBreakoutLevel() {
+  if (breakoutLevel < 99) breakoutLevel++;
+  breakoutSpeed += 0.25f;
+  if (breakoutSpeed > 8.0f) breakoutSpeed = 8.0f;
+  buildBreakoutLevel();
+  for (auto &ball : breakoutBalls) {
+    if (!ball.active || ball.ready) continue;
+    float speed = sqrtf(ball.vx * ball.vx + ball.vy * ball.vy);
+    if (speed > 0.01f) {
+      ball.vx = ball.vx * breakoutSpeed / speed;
+      ball.vy = ball.vy * breakoutSpeed / speed;
+    }
+  }
+  sfxPlay(SFX_LEVEL);
+}
+
+void stepBreakout() {
+  if (breakoutOver) return;
+  uint32_t now = millis();
+  float k = lastBreakoutStep ? (now - lastBreakoutStep) / 85.0f : 1.0f;
+  if (k > 3.0f) k = 3.0f;
+  lastBreakoutStep = now;
+  bool levelChanged = false;
+
+  for (auto &ball : breakoutBalls) {
+    if (!ball.active || ball.ready) continue;
+    int steps = (int)ceilf(breakoutSpeed * k / 4.0f);
+    if (steps < 1) steps = 1;
+    float part = k / steps;
+    for (int sub = 0; sub < steps && ball.active; sub++) {
+      float oldX = ball.x, oldY = ball.y;
+      ball.x += ball.vx * part;
+      ball.y += ball.vy * part;
+
+      bool brickHit = false;
+      for (uint8_t r = 0; r < 5 && !brickHit; r++) {
+        for (uint8_t c = 0; c < 6; c++) {
+          BreakBrick &brick = breakoutBricks[r][c];
+          if (!brick.hp) continue;
+          int bx = 84 + c * 50, by = 77 + r * 21;
+          const int bw = 44, bh = 16, radius = 6;
+          if (ball.x + radius < bx || ball.x - radius > bx + bw ||
+              ball.y + radius < by || ball.y - radius > by + bh) continue;
+
+          if (oldX + radius <= bx || oldX - radius >= bx + bw) ball.vx = -ball.vx;
+          else ball.vy = -ball.vy;
+          ball.x = oldX;
+          ball.y = oldY;
+          brick.hp--;
+          if (!brick.hp) {
+            breakoutScore += 10;
+            if (brick.extraBall) addBreakoutBonusBall(ball);
+            brick.extraBall = false;
+          }
+          brickHit = true;
+          break;
+        }
+      }
+      if (brickHit) {
+        bool anyBrick = false;
+        for (auto &row : breakoutBricks)
+          for (auto &brick : row) if (brick.hp) anyBrick = true;
+        if (!anyBrick) {
+          advanceBreakoutLevel();
+          levelChanged = true;
+          break;
+        }
+      }
+
+      float dx = ball.x - CX, dy = ball.y - CY;
+      float distance = sqrtf(dx * dx + dy * dy);
+      if (distance > 210.0f) {
+        float nx = dx / distance, ny = dy / distance;
+        float angle = atan2f(dy, dx);
+        if (ny > 0.0f) {
+          float diff = atan2f(sinf(angle - breakoutPaddleAngle),
+                              cosf(angle - breakoutPaddleAngle));
+          const float halfWidth = 0.22f;
+          if (fabsf(diff) <= halfWidth) {
+            float offset = diff / halfWidth;
+            float tx = -sinf(breakoutPaddleAngle), ty = cosf(breakoutPaddleAngle);
+            ball.vx = (-nx + tx * offset * 0.75f) * breakoutSpeed;
+            ball.vy = (-ny + ty * offset * 0.75f) * breakoutSpeed;
+            float v = sqrtf(ball.vx * ball.vx + ball.vy * ball.vy);
+            ball.vx *= breakoutSpeed / v;
+            ball.vy *= breakoutSpeed / v;
+            ball.x = CX + nx * 208.0f;
+            ball.y = CY + ny * 208.0f;
+            sfxPlay(SFX_TAP);
+          } else {
+            loseBreakoutBall(ball);
+          }
+        } else {
+          float dot = ball.vx * nx + ball.vy * ny;
+          if (dot > 0) {
+            ball.vx -= 2.0f * dot * nx;
+            ball.vy -= 2.0f * dot * ny;
+          }
+          ball.x = CX + nx * 208.0f;
+          ball.y = CY + ny * 208.0f;
+        }
+      }
+    }
+    if (levelChanged) break;
+  }
+}
+
+void renderBreakout() {
+  bool night = sceneHour() < 6 || sceneHour() >= 20;
+  uint16_t ink = night ? UI_INK_NIGHT : UI_INK;
+  drawGameScene();
+  if (breakoutOver && !timeLeft(breakoutOverUntil)) {
+    breakoutOpen = false;
+    gameMenuOpen = true;
+    return;
+  }
+
+  if (!breakoutOver) stepBreakout();
+  gfx->setTextColor(ink);
+  setSize(2);
+  setCur(26, 10);
+  printT("X");
+  setCur(centerX("BREAKOUT", 2), 10);
+  printT("BREAKOUT");
+  char score[20];
+  snprintf(score, sizeof(score), "SCORE %u", breakoutScore);
+  setSize(2);
+  setCur(centerX(score, 2), 38);
+  printT(score);
+  char level[12];
+  snprintf(level, sizeof(level), "LV %u", breakoutLevel);
+  setSize(1);
+  setCur(356, 59);
+  printT(level);
+  for (uint8_t i = 0; i < 3; i++) {
+    if (i < breakoutLives) gfx->fillCircle(184 + i * 25, 62, 5, UI_BAR_BAD);
+    else gfx->drawCircle(184 + i * 25, 62, 5, UI_TRACK);
+  }
+
+  gfx->drawCircle(CX, CY, 211, UI_TRACK);
+  const uint16_t hpColors[3] = {
+    C565(0x69, 0xb8, 0x6a), C565(0xf2, 0xb1, 0x54), C565(0xe8, 0x68, 0x58)
+  };
+  for (uint8_t r = 0; r < 5; r++) {
+    for (uint8_t c = 0; c < 6; c++) {
+      const BreakBrick &brick = breakoutBricks[r][c];
+      if (!brick.hp) continue;
+      int bx = 84 + c * 50, by = 77 + r * 21;
+      uint16_t fill = brick.extraBall ? C565(0x66, 0xa9, 0xc8) : hpColors[brick.hp - 1];
+      gfx->fillRoundRect(bx, by, 44, 16, 4, fill);
+      gfx->drawRoundRect(bx, by, 44, 16, 4, ink);
+      if (brick.extraBall) {
+        gfx->fillRect(bx + 21, by + 4, 3, 8, UI_WHITE);
+        gfx->fillRect(bx + 18, by + 7, 9, 3, UI_WHITE);
+      } else {
+        for (uint8_t hit = 0; hit < brick.hp; hit++)
+          gfx->fillCircle(bx + 13 + hit * 9, by + 12, 1, ink);
+      }
+    }
+  }
+
+  // Lower semicircle paddle, rendered as a thick curved band.
+  float half = 0.22f;
+  for (int radius = 198; radius <= 210; radius++) {
+    int x1 = CX + (int)(cosf(breakoutPaddleAngle - half) * radius);
+    int y1 = CY + (int)(sinf(breakoutPaddleAngle - half) * radius);
+    int x2 = CX + (int)(cosf(breakoutPaddleAngle + half) * radius);
+    int y2 = CY + (int)(sinf(breakoutPaddleAngle + half) * radius);
+    gfx->drawLine(x1, y1, x2, y2, radius > 207 ? UI_WHITE : C565(0x67, 0x9f, 0xd2));
+  }
+
+  for (const auto &ball : breakoutBalls) {
+    if (!ball.active) continue;
+    gfx->fillCircle((int)ball.x, (int)ball.y, 6, UI_WHITE);
+    gfx->drawCircle((int)ball.x, (int)ball.y, 6, ink);
+  }
+  if (!breakoutOver) {
+    bool waiting = false;
+    for (const auto &ball : breakoutBalls) if (ball.active && ball.ready) waiting = true;
+    if (waiting) {
+      setSize(2);
+      gfx->setTextColor(ink);
+      setCur(centerX("TAP TO LAUNCH", 2), 214);
+      printT("TAP TO LAUNCH");
+    }
+  }
+
+  if (breakoutOver) {
+    gfx->fillRoundRect(91, 184, 284, 96, 16, UI_WHITE);
+    gfx->drawRoundRect(91, 184, 284, 96, 16, ink);
+    gfx->setTextColor(ink);
+    setSize(3);
+    setCur(centerX("GAME OVER", 3), 198);
+    printT("GAME OVER");
+    char finalScore[20];
+    snprintf(finalScore, sizeof(finalScore), "SCORE %u", breakoutScore);
+    setSize(2);
+    setCur(centerX(finalScore, 2), 242);
+    printT(finalScore);
+  }
+  gfx->flush();
+}
+
 void spawn2048Tile() {
   uint8_t empty[16], count = 0;
   for (uint8_t i = 0; i < 16; i++)
