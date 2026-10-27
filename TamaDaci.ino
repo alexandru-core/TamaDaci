@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.33"
+#define FW_VERSION "1.34"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -110,6 +110,12 @@ uint32_t nextWindChange = 0, leafWarningStarted = 0, leafResultUntil = 0;
 float leafBasketAngle = -1.5707963f;
 uint16_t leafScore = 0;
 uint8_t leafMisses = 0, leafWindDir = 0, leafNextWindDir = 0, leafWarningBeep = 0;
+
+// 2048 touch puzzle.
+bool game2048Open = false, game2048ExitTouch = false, game2048Won = false;
+uint32_t game2048Board[16] = {0};
+uint32_t game2048Score = 0, game2048OverUntil = 0;
+int16_t game2048TouchX = 0, game2048TouchY = 0;
 
 // saco de entrenamiento (entrena la fuerza)
 bool sackOpen = false;
@@ -352,7 +358,7 @@ void loop() {
   // volcado). Es la mayor carga evitable de la placa. Cada render repinta la
   // escena entera, asi que no queda nada a medias; y al quedarse lastRender
   // congelado, el primer frame tras despertar sale en el acto.
-  if (!screenOff && now - lastRender >= (uint32_t)((gameOpen || berryCatchOpen || leafCatcherOpen || gameMenuOpen || sackOpen) ? 85 : 100)) {
+  if (!screenOff && now - lastRender >= (uint32_t)((gameOpen || berryCatchOpen || leafCatcherOpen || game2048Open || gameMenuOpen || sackOpen) ? 85 : 100)) {
     lastRender = now;
     render();
   }
@@ -606,7 +612,7 @@ void openClock();  // prototipo
 
 void onSwipeV(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
-  if (gameMenuOpen || gameOpen || berryCatchOpen || galleryOpen || kbOpen || sackOpen || pet.ceremony) return;
+  if (gameMenuOpen || gameOpen || berryCatchOpen || game2048Open || galleryOpen || kbOpen || sackOpen || pet.ceremony) return;
   if (clockOpen) { clockOpen = false; return; }
   if (cardOpen) {
     if (dir < 0) cardOpen = false;  // arriba cierra la ficha
@@ -623,7 +629,7 @@ void onSwipeV(int dir) {
 // deslizar: dir +1 = hacia la derecha
 void onSwipe(int dir) {
   if (pet.awaitingStarter()) return;  // bloqueado durante la eleccion de inicial
-  if (gameMenuOpen || gameOpen || berryCatchOpen || kbOpen || clockOpen) return;
+  if (gameMenuOpen || gameOpen || berryCatchOpen || game2048Open || kbOpen || clockOpen) return;
   if (cardOpen) {  // dentro de la ficha: cambiar entre las 4 paginas
     int p = (int)cardPage + (dir > 0 ? -1 : 1);  // izquierda avanza
     cardPage = p < 0 ? 0 : (p > 3 ? 3 : p);
@@ -709,6 +715,7 @@ void onTap(int16_t x, int16_t y) {
       else if (index == 1) startBerryCatch();
       else if (index == 2) { gameMenuOpen = false; startSack(); }
       else if (index == 3) startLeafCatcher();
+      else if (index == 4) start2048();
     }
     return;
   }
@@ -1062,6 +1069,10 @@ void render() {
   }
   if (gameMenuOpen) {
     renderGameMenu();
+    return;
+  }
+  if (game2048Open) {
+    render2048();
     return;
   }
   if (leafCatcherOpen) {
@@ -1482,7 +1493,7 @@ void renderGameMenu() {
     int col = i % 3, row = i / 3;
     int x = gridX + col * (cellW + colGap);
     int y = gridY + row * (cellH + rowGap);
-    bool available = i < 4;
+    bool available = i < 5;
     gfx->fillRoundRect(x, y, cellW, cellH, 12, UI_WHITE);
     gfx->drawRoundRect(x, y, cellW, cellH, 12, available ? inkColor() : UI_TRACK);
 
