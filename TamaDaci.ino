@@ -1365,7 +1365,7 @@ void drawLeafArrow(float angle, uint16_t color, int cx, int cy) {
 }
 
 void drawLeafArrows(float angle, uint16_t color) {
-  float px = -sinf(angle) * 42.0f, py = cosf(angle) * 42.0f;
+  float px = -sinf(angle) * 51.0f, py = cosf(angle) * 51.0f;
   for (int i = -1; i <= 1; i++)
     drawLeafArrow(angle, color, CX + (int)(px * i), CY + (int)(py * i));
 }
