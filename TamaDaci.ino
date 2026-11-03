@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.36"
+#define FW_VERSION "1.37"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -1316,14 +1316,18 @@ void openGameMenu() {
 void drawGameScene();
 
 void buildBreakoutLevel() {
+  // Start with two rows and add one row on each stage, up to the full five.
+  uint8_t activeRows = breakoutLevel < 4 ? breakoutLevel + 1 : 5;
   for (uint8_t r = 0; r < 5; r++) {
     for (uint8_t c = 0; c < 6; c++) {
+      breakoutBricks[r][c].hp = 0;
+      breakoutBricks[r][c].extraBall = false;
+      if (r >= activeRows) continue;
       uint8_t roll = random(100);
       breakoutBricks[r][c].hp = roll < 14 ? 3 : roll < 46 ? 2 : 1;
-      breakoutBricks[r][c].extraBall = false;
     }
   }
-  uint8_t bonus = random(30);
+  uint8_t bonus = random(activeRows * 6);
   breakoutBricks[bonus / 6][bonus % 6].extraBall = true;
 }
 
