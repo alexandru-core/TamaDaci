@@ -25,7 +25,7 @@
 
 // Version del firmware. Subir este numero en cada release (y manifest.json para
 // el instalador web). Se muestra en la pantalla de ajustes y por serie al arrancar.
-#define FW_VERSION "1.37"
+#define FW_VERSION "1.38"
 
 Arduino_DataBus *bus = new Arduino_ESP32QSPI(
   LCD_CS, LCD_SCLK, LCD_SDIO0, LCD_SDIO1, LCD_SDIO2, LCD_SDIO3);
@@ -112,7 +112,7 @@ uint16_t leafScore = 0;
 uint8_t leafMisses = 0, leafWindDir = 0, leafNextWindDir = 0, leafWarningBeep = 0;
 
 // Breakout: bricks sit in the upper field; paddle follows the lower semicircle.
-struct BreakBrick { uint8_t hp; bool extraBall; };
+struct BreakBrick { uint8_t hp; bool extraBall, explosive; };
 struct BreakBall { float x, y, vx, vy; bool active, ready; };
 BreakBrick breakoutBricks[5][6];
 BreakBall breakoutBalls[6];
@@ -120,7 +120,7 @@ bool breakoutOpen = false, breakoutExitTouch = false, breakoutOver = false;
 uint32_t breakoutOverUntil = 0, lastBreakoutStep = 0;
 uint16_t breakoutScore = 0;
 uint8_t breakoutLives = 3, breakoutLevel = 1;
-float breakoutPaddleAngle = 1.5707963f, breakoutSpeed = 5.5f;
+float breakoutPaddleAngle = 1.5707963f, breakoutSpeed = 20.0f;
 int16_t breakoutTouchX = 0, breakoutTouchY = 0;
 int16_t breakoutTouchLastX = 0, breakoutTouchLastY = 0;
 void startBreakout();
@@ -1320,15 +1320,24 @@ void buildBreakoutLevel() {
   uint8_t activeRows = breakoutLevel < 4 ? breakoutLevel + 1 : 5;
   for (uint8_t r = 0; r < 5; r++) {
     for (uint8_t c = 0; c < 6; c++) {
-      breakoutBricks[r][c].hp = 0;
-      breakoutBricks[r][c].extraBall = false;
+      BreakBrick &brick = breakoutBricks[r][c];
+      brick.hp = 0;
+      brick.extraBall = false;
+      brick.explosive = false;
       if (r >= activeRows) continue;
       uint8_t roll = random(100);
-      breakoutBricks[r][c].hp = roll < 14 ? 3 : roll < 46 ? 2 : 1;
+      brick.hp = roll < 14 ? 3 : roll < 46 ? 2 : 1;
     }
   }
-  uint8_t bonus = random(activeRows * 6);
+  uint8_t total = activeRows * 6;
+  uint8_t bonus = random(total);
   breakoutBricks[bonus / 6][bonus % 6].extraBall = true;
+  // Explosives join from stage 2. They damage the surrounding 8 bricks when broken.
+  if (breakoutLevel >= 2 && total > 1) {
+    uint8_t explosive = random(total - 1);
+    if (explosive >= bonus) explosive++;
+    breakoutBricks[explosive / 6][explosive % 6].explosive = true;
+  }
 }
 
 void setBreakoutPaddleFromX(int16_t x) {
@@ -1377,7 +1386,7 @@ void startBreakout() {
   breakoutScore = 0;
   breakoutLives = 3;
   breakoutLevel = 1;
-  breakoutSpeed = 5.5f;
+  breakoutSpeed = 20.0f;
   breakoutPaddleAngle = 1.5707963f;
   buildBreakoutLevel();
   resetBreakoutReadyBall();
@@ -1424,8 +1433,8 @@ void loseBreakoutBall(BreakBall &ball) {
 
 void advanceBreakoutLevel() {
   if (breakoutLevel < 99) breakoutLevel++;
-  breakoutSpeed += 0.25f;
-  if (breakoutSpeed > 8.0f) breakoutSpeed = 8.0f;
+  breakoutSpeed += 1.0f;
+  if (breakoutSpeed > 28.0f) breakoutSpeed = 28.0f;
   buildBreakoutLevel();
   for (auto &ball : breakoutBalls) {
     if (!ball.active || ball.ready) continue;
@@ -1474,7 +1483,27 @@ void stepBreakout() {
           if (!brick.hp) {
             breakoutScore += 10;
             if (brick.extraBall) addBreakoutBonusBall(ball);
+            if (brick.explosive) {
+              for (int8_t dr = -1; dr <= 1; dr++) {
+                for (int8_t dc = -1; dc <= 1; dc++) {
+                  if (dr == 0 && dc == 0) continue;
+                  int8_t nr = (int8_t)r + dr, nc = (int8_t)c + dc;
+                  if (nr < 0 || nr >= 5 || nc < 0 || nc >= 6) continue;
+                  BreakBrick &near = breakoutBricks[nr][nc];
+                  if (!near.hp) continue;
+                  near.hp--;
+                  if (!near.hp) {
+                    breakoutScore += 10;
+                    if (near.extraBall) addBreakoutBonusBall(ball);
+                    near.extraBall = false;
+                    near.explosive = false;  // blasts do not chain
+                  }
+                }
+              }
+              sfxPlay(SFX_LEVEL);
+            }
             brick.extraBall = false;
+            brick.explosive = false;
           }
           brickHit = true;
           break;
@@ -1501,6 +1530,8 @@ void stepBreakout() {
                               cosf(angle - breakoutPaddleAngle));
           const float halfWidth = 0.22f;
           if (fabsf(diff) <= halfWidth) {
+            breakoutSpeed += 0.35f;
+            if (breakoutSpeed > 28.0f) breakoutSpeed = 28.0f;
             float offset = diff / halfWidth;
             float tx = -sinf(breakoutPaddleAngle), ty = cosf(breakoutPaddleAngle);
             ball.vx = (-nx + tx * offset * 0.75f) * breakoutSpeed;
@@ -1571,12 +1602,17 @@ void renderBreakout() {
       const BreakBrick &brick = breakoutBricks[r][c];
       if (!brick.hp) continue;
       int bx = 84 + c * 50, by = 77 + r * 21;
-      uint16_t fill = brick.extraBall ? C565(0x66, 0xa9, 0xc8) : hpColors[brick.hp - 1];
+      uint16_t fill = brick.extraBall ? C565(0x66, 0xa9, 0xc8)
+                      : brick.explosive ? C565(0xf0, 0x62, 0x35)
+                      : hpColors[brick.hp - 1];
       gfx->fillRoundRect(bx, by, 44, 16, 4, fill);
       gfx->drawRoundRect(bx, by, 44, 16, 4, ink);
       if (brick.extraBall) {
         gfx->fillRect(bx + 21, by + 4, 3, 8, UI_WHITE);
         gfx->fillRect(bx + 18, by + 7, 9, 3, UI_WHITE);
+      } else if (brick.explosive) {
+        gfx->drawLine(bx + 16, by + 4, bx + 28, by + 12, UI_WHITE);
+        gfx->drawLine(bx + 28, by + 4, bx + 16, by + 12, UI_WHITE);
       } else {
         for (uint8_t hit = 0; hit < brick.hp; hit++)
           gfx->fillCircle(bx + 13 + hit * 9, by + 12, 1, ink);
